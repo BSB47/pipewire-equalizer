@@ -71,7 +71,9 @@ struct Use {
 enum Cmd {
     Create(Create),
     /// List available EQ filters
+    #[clap(alias = "ls")]
     List,
+    #[clap(alias = "desc")]
     Describe(Describe),
     Set(Set),
     Use(Use),
