@@ -16,7 +16,7 @@ pub struct PwDumpObject {
     #[serde(default)]
     pub permissions: Option<Vec<String>>,
     #[serde(default)]
-    pub info: Option<PwObjectInfo>,
+    pub info: PwObjectInfo,
     #[serde(default)]
     pub props: Option<HashMap<String, serde_json::Value>>,
 }
@@ -47,12 +47,33 @@ pub enum PwObjectType {
     Link,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct PwObjectInfo {
     #[serde(flatten)]
     pub fields: HashMap<String, serde_json::Value>,
     #[serde(default)]
     pub props: HashMap<String, serde_json::Value>,
+    #[serde(default)]
+    pub params: PwParams,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "PascalCase")]
+pub struct PwParams {
+    #[serde(default)]
+    pub enum_format: Vec<serde_json::Value>,
+    #[serde(default)]
+    pub prop_info: Vec<PwPropInfo>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PwPropInfo {
+    pub id: Option<String>,
+    pub name: Option<String>,
+    #[serde(default)]
+    pub description: String,
+    #[serde(rename = "type")]
+    pub type_: serde_json::Value,
 }
 
 pub async fn dump() -> Result<Vec<PwDumpObject>> {

@@ -1,10 +1,9 @@
 use anyhow::Context as _;
 use clap::Parser;
-use pw_util::config::MANAGED_PROP;
+use pw_util::config::{MANAGED_PROP, SpaJson};
 use std::path::PathBuf;
 use tabled::{Table, Tabled};
 use tokio::fs;
-use tokio::process::Command;
 
 #[derive(Parser)]
 #[command(name = "pw-eq")]
@@ -35,6 +34,11 @@ enum Cmd {
     Create(Create),
     /// List available EQ filters
     List,
+    /// Describe an EQ filter in detail
+    Describe {
+        /// EQ name or ID
+        profile: String,
+    },
     /// Set an EQ as the default sink
     Use {
         /// EQ name or ID
@@ -51,6 +55,7 @@ async fn main() -> anyhow::Result<()> {
     match args.command {
         Cmd::Create(create) => create_eq(create).await?,
         Cmd::List => list_eqs().await?,
+        Cmd::Describe { profile } => describe_eq(&profile).await?,
         Cmd::Use { profile } => use_eq(&profile).await?,
         Cmd::Tui => {
             println!("TUI not yet implemented");
@@ -59,6 +64,9 @@ async fn main() -> anyhow::Result<()> {
 
     Ok(())
 }
+
+// to set a band live, something like this
+// pw-cli set-param 44 Props '{ params = [ "eq_band_6:Gain", -1.5 ] }'
 
 async fn create_eq(
     Create {
@@ -72,7 +80,10 @@ async fn create_eq(
     let apo_config = pw_util::apo::parse_file(apo).await?;
 
     // Generate the filter-chain config
-    let config_content = pw_util::config::generate_filter_chain_config(&name, &apo_config);
+    let config_content = pw_util::config::Config::from_apo(&name, &apo_config);
+    let json = serde_json::to_value(&config_content)
+        .context("failed to serialize PipeWire config to JSON")?;
+    let content = SpaJson::new(&json).to_string();
 
     // Get the config directory path
     let config_dir = dirs::config_dir()
@@ -91,14 +102,7 @@ async fn create_eq(
         ));
     }
 
-    fs::write(&config_file, config_content).await?;
-
-    // Ideally find a way to not require a restart if possible
-    Command::new("systemctl")
-        .args(["--user", "restart", "pipewire"])
-        .output()
-        .await
-        .context("failed to restart PipeWire")?;
+    fs::write(&config_file, content).await?;
 
     if use_after {
         use_eq(&name).await?;
@@ -117,6 +121,68 @@ async fn use_eq(profile: &str) -> anyhow::Result<()> {
     Ok(())
 }
 
+async fn describe_eq(profile: &str) -> anyhow::Result<()> {
+    let objects = pw_util::dump().await?;
+
+    // Find the EQ node by name or ID
+    let target_id: Option<u32> = profile.parse().ok();
+
+    let node = objects
+        .into_iter()
+        .filter(|obj| matches!(obj.object_type, pw_util::PwObjectType::Node))
+        .filter_map(|obj| {
+            let props = &obj.info.props;
+            let managed = props.get(MANAGED_PROP)?;
+            (managed == true).then_some(obj)
+        })
+        .find(|obj| {
+            if let Some(target_id) = target_id {
+                obj.id == target_id
+            } else {
+                let props = &obj.info.props;
+                if let Some(name) = props.get("media.name") {
+                    name == profile
+                } else {
+                    false
+                }
+            }
+        })
+        .ok_or_else(|| anyhow::anyhow!("EQ '{}' not found", profile))?;
+
+    let info = node.info;
+    let props = &info.props;
+
+    // Display basic information
+    let name = props
+        .get("media.name")
+        .and_then(|v| v.as_str())
+        .unwrap_or("Unknown");
+    let description = props
+        .get("node.description")
+        .and_then(|v| v.as_str())
+        .unwrap_or("Unknown");
+
+    for info in &info.params.prop_info {
+        let Some((idx, field)) = info
+            .name
+            .as_ref()
+            .and_then(|name| name.strip_prefix("pweq.band"))
+            .and_then(|s| s.split_once(':'))
+        else {
+            continue;
+        };
+
+        panic!("Band {}: {}", idx, info.description);
+    }
+
+    println!("EQ Profile: {}", name);
+    println!("ID: {}", node.id);
+    println!("Description: {}", description);
+    println!();
+
+    Ok(())
+}
+
 async fn list_eqs() -> anyhow::Result<()> {
     let objects = pw_util::dump().await?;
 
@@ -130,12 +196,12 @@ async fn list_eqs() -> anyhow::Result<()> {
         .into_iter()
         .filter(|obj| matches!(obj.object_type, pw_util::PwObjectType::Node))
         .filter_map(|obj| {
-            let props = &obj.info.as_ref()?.props;
+            let props = &obj.info.props;
             let managed = props.get(MANAGED_PROP)?;
             (managed == true).then_some(obj)
         })
         .map(|obj| {
-            let props = &obj.info.as_ref().unwrap().props;
+            let props = &obj.info.props;
             let name = props
                 .get("media.name")
                 .and_then(|v| v.as_str())
