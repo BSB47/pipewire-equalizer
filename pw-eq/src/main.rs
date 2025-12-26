@@ -1,3 +1,16 @@
+use clap::Parser;
+
+#[derive(Parser)]
+struct Args {
+    #[clap(subcommand)]
+    command: Cmd,
+}
+
+#[derive(Parser)]
+enum Cmd {
+    Tui,
+}
+
 fn main() {
-    println!("Hello, world!");
+    let args = Args::parse();
 }
