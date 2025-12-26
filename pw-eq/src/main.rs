@@ -212,29 +212,25 @@ async fn set_band(
     let mut params = Vec::new();
 
     if let Some(freq_val) = freq {
-        params.push(format!("\"{}{}:Freq\"", BAND_PREFIX, band));
+        params.push(format!(r#""{BAND_PREFIX}{band}:Freq""#));
         params.push(freq_val.to_string());
     }
 
     if let Some(gain_val) = gain {
-        params.push(format!("\"{}{}:Gain\"", BAND_PREFIX, band));
+        params.push(format!(r#""{BAND_PREFIX}{band}:Gain""#));
         params.push(gain_val.to_string());
     }
 
     if let Some(q_val) = q {
-        params.push(format!("\"{}{}:Q\"", BAND_PREFIX, band));
+        params.push(format!(r#""{BAND_PREFIX}{band}:Q""#));
         params.push(q_val.to_string());
     }
 
-    let params_str = params.join(", ");
-    let cmd = format!(
-        "pw-cli set-param {} Props '{{ params = [ {} ] }}'",
-        node.id, params_str
-    );
-
-    let output = Command::new("sh")
-        .arg("-c")
-        .arg(&cmd)
+    let output = Command::new("pw-cli")
+        .arg("set-param")
+        .arg(node.id.to_string())
+        .arg("Props")
+        .arg(format!("{{ params = [ {} ] }}", params.join(", ")))
         .output()
         .await
         .context("Failed to execute pw-cli")?;
