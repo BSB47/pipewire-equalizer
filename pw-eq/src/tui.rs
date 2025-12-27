@@ -231,8 +231,8 @@ where
             KeyCode::Char('q') | KeyCode::Esc => return Ok(ControlFlow::Break(())),
 
             // Navigation
-            KeyCode::Tab => self.eq_state.select_next_band(),
-            KeyCode::BackTab => self.eq_state.select_prev_band(),
+            KeyCode::Tab | KeyCode::Char('j') => self.eq_state.select_next_band(),
+            KeyCode::BackTab | KeyCode::Char('k') => self.eq_state.select_prev_band(),
             KeyCode::Char(c @ '1'..='9') => {
                 let idx = c.to_digit(10).unwrap() as usize - 1;
                 if idx < self.eq_state.bands.len() {
@@ -241,16 +241,16 @@ where
             }
 
             // Frequency adjustment
-            KeyCode::Char('f') => self.eq_state.adjust_freq(-10.0),
-            KeyCode::Char('F') => self.eq_state.adjust_freq(10.0),
+            KeyCode::Char('f') => self.eq_state.adjust_freq(10.0),
+            KeyCode::Char('F') => self.eq_state.adjust_freq(-10.0),
 
             // Gain adjustment
-            KeyCode::Char('g') => self.eq_state.adjust_gain(-0.1),
-            KeyCode::Char('G') => self.eq_state.adjust_gain(0.1),
+            KeyCode::Char('g') => self.eq_state.adjust_gain(0.1),
+            KeyCode::Char('G') => self.eq_state.adjust_gain(-0.1),
 
             // Q adjustment
-            KeyCode::Char('z') => self.eq_state.adjust_q(-0.1),
-            KeyCode::Char('Z') => self.eq_state.adjust_q(0.1),
+            KeyCode::Char('z') => self.eq_state.adjust_q(0.1),
+            KeyCode::Char('Z') => self.eq_state.adjust_q(-0.1),
 
             // Band management
             KeyCode::Char('a') => self.eq_state.add_band(),
