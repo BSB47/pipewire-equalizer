@@ -46,16 +46,73 @@ impl EqState {
     fn new(name: String) -> Self {
         Self {
             name,
-            bands: vec![Band::default()],
+            bands: vec![
+                Band {
+                    freq: 50.0,
+                    gain: 0.0,
+                    q: 1.0,
+                },
+                Band {
+                    freq: 100.0,
+                    gain: 0.0,
+                    q: 1.0,
+                },
+                Band {
+                    freq: 200.0,
+                    gain: 0.0,
+                    q: 1.0,
+                },
+                Band {
+                    freq: 500.0,
+                    gain: 0.0,
+                    q: 1.0,
+                },
+                Band {
+                    freq: 2000.0,
+                    gain: 0.0,
+                    q: 1.0,
+                },
+                Band {
+                    freq: 5000.0,
+                    gain: 0.0,
+                    q: 1.0,
+                },
+                Band {
+                    freq: 10000.0,
+                    gain: 0.0,
+                    q: 1.0,
+                },
+            ],
             selected_band: 0,
             max_bands: 20,
         }
     }
 
     fn add_band(&mut self) {
-        if self.bands.len() < self.max_bands {
-            self.bands.push(Band::default());
+        if self.bands.len() >= self.max_bands {
+            return;
         }
+
+        let current_band = &self.bands[self.selected_band];
+
+        // Calculate new frequency between current and next band
+        let new_freq = if self.selected_band + 1 < self.bands.len() {
+            let next_band = &self.bands[self.selected_band + 1];
+            // Geometric mean (better for logarithmic frequency scale)
+            (current_band.freq * next_band.freq).sqrt()
+        } else {
+            // If at the end, go halfway to 20kHz in log space
+            (current_band.freq * 20000.0).sqrt().min(20000.0)
+        };
+
+        let new_band = Band {
+            freq: new_freq,
+            gain: 0.0,
+            q: current_band.q, // Copy Q from current band
+        };
+
+        self.bands.insert(self.selected_band + 1, new_band);
+        self.selected_band += 1;
     }
 
     fn delete_selected_band(&mut self) {
@@ -228,7 +285,7 @@ where
         tracing::debug!(key = ?key, "key event");
         match key.code {
             // Quit
-            KeyCode::Char('q') | KeyCode::Esc => return Ok(ControlFlow::Break(())),
+            KeyCode::Esc => return Ok(ControlFlow::Break(())),
 
             // Navigation
             KeyCode::Tab | KeyCode::Char('j') => self.eq_state.select_next_band(),
@@ -241,16 +298,16 @@ where
             }
 
             // Frequency adjustment
-            KeyCode::Char('f') => self.eq_state.adjust_freq(10.0),
-            KeyCode::Char('F') => self.eq_state.adjust_freq(-10.0),
+            KeyCode::Char('f') => self.eq_state.adjust_freq(1.0),
+            KeyCode::Char('F') => self.eq_state.adjust_freq(-1.0),
 
             // Gain adjustment
             KeyCode::Char('g') => self.eq_state.adjust_gain(0.1),
             KeyCode::Char('G') => self.eq_state.adjust_gain(-0.1),
 
             // Q adjustment
-            KeyCode::Char('z') => self.eq_state.adjust_q(0.1),
-            KeyCode::Char('Z') => self.eq_state.adjust_q(-0.1),
+            KeyCode::Char('q') => self.eq_state.adjust_q(0.1),
+            KeyCode::Char('Q') => self.eq_state.adjust_q(-0.1),
 
             // Band management
             KeyCode::Char('a') => self.eq_state.add_band(),
