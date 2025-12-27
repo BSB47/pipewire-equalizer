@@ -8,7 +8,7 @@ use crate::tui::Notification;
 
 pub enum Message {
     Terminate,
-    LoadModule { name: String },
+    LoadModule { name: String, args: String },
 }
 
 pub fn pw_thread(
@@ -23,8 +23,8 @@ pub fn pw_thread(
         let context = context.clone();
         move |msg| match msg {
             Message::Terminate => mainloop.quit(),
-            Message::LoadModule { name } => {
-                let module = match api::load_module(&context, &name, "") {
+            Message::LoadModule { name, args } => {
+                let module = match api::load_module(&context, &name, &args) {
                     Ok(module) => module,
                     Err(err) => {
                         let _ = notifs.blocking_send(Notification::Error(err));

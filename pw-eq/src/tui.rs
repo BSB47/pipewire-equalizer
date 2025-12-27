@@ -185,6 +185,7 @@ where
     }
 
     fn handle_key(&mut self, key: KeyEvent) -> io::Result<ControlFlow<()>> {
+        tracing::error!(key = ?key, "key event");
         match key.code {
             // Quit
             KeyCode::Char('q') | KeyCode::Esc => return Ok(ControlFlow::Break(())),
@@ -214,6 +215,14 @@ where
             // Band management
             KeyCode::Char('a') => self.eq_state.add_band(),
             KeyCode::Char('d') => self.eq_state.delete_selected_band(),
+
+            KeyCode::Char('m') => {
+                tracing::info!("Loading PipeWire EQ module");
+                let _ = self.pw_tx.send(pw::Message::LoadModule {
+                    name: "libpipewire-module-filter-chain".into(),
+                    args: "filter.chain=\"eq\" filter.eq.profile=\"custom\"".to_string(),
+                });
+            }
 
             _ => {}
         }
