@@ -3,11 +3,12 @@ mod tui;
 
 use anyhow::Context as _;
 use clap::Parser;
-use pw_util::config::{BAND_PREFIX, MANAGED_PROP, SpaJson};
+use pw_eq::{find_eq_node, use_eq};
+use pw_util::config::{BAND_PREFIX, SpaJson};
 use std::collections::BTreeMap;
 use std::fs::File;
 use std::path::PathBuf;
-use tabled::{Table, Tabled};
+use tabled::Table;
 use tokio::fs;
 use tokio::process::Command;
 use tracing_subscriber::EnvFilter;
@@ -120,7 +121,11 @@ async fn main() -> anyhow::Result<()> {
 
     match args.command {
         Cmd::Create(create) => create_eq(create).await?,
-        Cmd::List => list_eqs().await?,
+        Cmd::List => {
+            let eqs = pw_eq::list_eqs().await?;
+            let table = Table::new(eqs);
+            println!("{table}");
+        }
         Cmd::Describe(describe) => describe_eq(&describe.profile).await?,
         Cmd::Set(set) => set_band(set).await?,
         Cmd::Use(use_cmd) => use_eq(&use_cmd.profile).await?,
@@ -128,40 +133,6 @@ async fn main() -> anyhow::Result<()> {
     }
 
     Ok(())
-}
-
-fn is_managed_eq(props: &pw_util::PwDumpObject) -> bool {
-    props
-        .info
-        .props
-        .get(MANAGED_PROP)
-        .is_some_and(|managed| managed == true)
-}
-
-/// Find an EQ node by profile name or ID
-async fn find_eq_node(profile: &str) -> anyhow::Result<pw_util::PwDumpObject> {
-    let objects = pw_util::dump().await?;
-
-    // Try to parse as ID first
-    let target_id: Option<u32> = profile.parse().ok();
-
-    objects
-        .into_iter()
-        .filter(|obj| matches!(obj.object_type, pw_util::PwObjectType::Node))
-        .filter(is_managed_eq)
-        .find(|obj| {
-            if let Some(target_id) = target_id {
-                obj.id == target_id
-            } else {
-                let props = &obj.info.props;
-                if let Some(name) = props.get("media.name") {
-                    name == profile
-                } else {
-                    false
-                }
-            }
-        })
-        .ok_or_else(|| anyhow::anyhow!("EQ '{profile}' not found"))
 }
 
 async fn create_eq(
@@ -204,16 +175,6 @@ async fn create_eq(
         use_eq(&name).await?;
     }
 
-    Ok(())
-}
-
-async fn use_eq(profile: &str) -> anyhow::Result<()> {
-    // This is a placeholder implementation
-    // In a real implementation, you would set the default sink to the EQ node
-    println!(
-        "Setting EQ '{}' as the default sink (not yet implemented)",
-        profile
-    );
     Ok(())
 }
 
@@ -335,38 +296,6 @@ async fn describe_eq(profile: &str) -> anyhow::Result<()> {
             idx, freq, gain, q
         );
     }
-
-    Ok(())
-}
-
-async fn list_eqs() -> anyhow::Result<()> {
-    let objects = pw_util::dump().await?;
-
-    #[derive(Tabled)]
-    struct Row {
-        id: u32,
-        name: String,
-    }
-
-    let rows = objects
-        .into_iter()
-        .filter(is_managed_eq)
-        .filter(|obj| matches!(obj.object_type, pw_util::PwObjectType::Node))
-        .map(|obj| {
-            let props = &obj.info.props;
-            let name = props
-                .get("media.name")
-                .and_then(|v| v.as_str())
-                .unwrap_or("Unknown");
-            let id = obj.id;
-            Row {
-                id,
-                name: name.to_string(),
-            }
-        });
-
-    let table = Table::new(rows);
-    println!("{table}");
 
     Ok(())
 }
