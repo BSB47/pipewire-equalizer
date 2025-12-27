@@ -1,5 +1,7 @@
-use pw_util::config::MANAGED_PROP;
+use anyhow::Context;
+use pw_util::config::{BAND_PREFIX, MANAGED_PROP};
 use tabled::Tabled;
+use tokio::process::Command;
 
 #[derive(Tabled)]
 pub struct EqMeta {
@@ -65,11 +67,53 @@ pub async fn find_eq_node(profile: &str) -> anyhow::Result<pw_util::PwDumpObject
 }
 
 pub async fn use_eq(profile: &str) -> anyhow::Result<()> {
-    // This is a placeholder implementation
-    // In a real implementation, you would set the default sink to the EQ node
-    println!(
-        "Setting EQ '{}' as the default sink (not yet implemented)",
-        profile
-    );
+    let node = find_eq_node(profile).await?;
+    pw_util::set_default(node.id).await?;
+    Ok(())
+}
+
+#[derive(Debug, Clone)]
+pub struct UpdateBand {
+    pub frequency: Option<f64>,
+    pub gain: Option<f64>,
+    pub q: Option<f64>,
+}
+
+pub async fn update_band(
+    node_id: u32,
+    band_idx: usize,
+    UpdateBand { frequency, gain, q }: UpdateBand,
+) -> anyhow::Result<()> {
+    // Build the params array for pw-cli
+    let mut params = Vec::new();
+
+    if let Some(freq) = frequency {
+        params.push(format!(r#""{BAND_PREFIX}{band_idx}:Freq""#));
+        params.push(freq.to_string());
+    }
+
+    if let Some(gain_val) = gain {
+        params.push(format!(r#""{BAND_PREFIX}{band_idx}:Gain""#));
+        params.push(gain_val.to_string());
+    }
+
+    if let Some(q_val) = q {
+        params.push(format!(r#""{BAND_PREFIX}{band_idx}:Q""#));
+        params.push(q_val.to_string());
+    }
+
+    let output = Command::new("pw-cli")
+        .arg("set-param")
+        .arg(node_id.to_string())
+        .arg("Props")
+        .arg(format!("{{ params = [ {} ] }}", params.join(", ")))
+        .output()
+        .await
+        .context("Failed to execute pw-cli")?;
+
+    if !output.status.success() {
+        anyhow::bail!("pw-cli failed: {}", String::from_utf8_lossy(&output.stderr));
+    }
+
     Ok(())
 }

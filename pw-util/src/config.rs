@@ -83,37 +83,37 @@ impl Module {
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct ModuleArgs {
     #[serde(rename = "node.description")]
-    node_description: String,
+    pub node_description: String,
     #[serde(rename = "media.name")]
-    media_name: String,
+    pub media_name: String,
     #[serde(rename = "filter.graph")]
-    filter_graph: FilterGraph,
+    pub filter_graph: FilterGraph,
     #[serde(rename = "audio.channels")]
-    audio_channels: usize,
-    audio_position: Vec<AudioPosition>,
+    pub audio_channels: usize,
+    pub audio_position: Vec<AudioPosition>,
     #[serde(rename = "playback.props")]
-    playback_props: PlaybackProps,
+    pub playback_props: PlaybackProps,
     #[serde(rename = "capture.props")]
-    capture_props: CaptureProps,
+    pub capture_props: CaptureProps,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-struct PlaybackProps {
+pub struct PlaybackProps {
     #[serde(rename = "node.name")]
-    node_name: String,
+    pub node_name: String,
     #[serde(rename = "node.passive")]
-    node_passive: bool,
+    pub node_passive: bool,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-struct CaptureProps {
+pub struct CaptureProps {
     #[serde(rename = "node.name")]
-    node_name: String,
+    pub node_name: String,
     #[serde(rename = "media.class")]
-    media_class: String,
+    pub media_class: String,
     // Ensure this rename matches the constant MANAGED_PROP
     #[serde(rename = "pweq.managed")]
-    pweq_managed: bool,
+    pub pweq_managed: bool,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -138,18 +138,18 @@ pub enum AudioPosition {
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct FilterGraph {
-    nodes: Box<[Node]>,
-    links: Vec<Link>,
+    pub nodes: Box<[Node]>,
+    pub links: Vec<Link>,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Node {
     #[serde(rename = "type")]
-    node_type: NodeType,
-    name: String,
+    pub node_type: NodeType,
+    pub name: String,
     #[serde(rename = "label")]
-    filter: FilterType,
-    control: Control,
+    pub filter: FilterType,
+    pub control: Control,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -250,7 +250,7 @@ impl fmt::Display for SpaJson<'_> {
 mod tests {
     use crate::{
         apo::{self, FilterType},
-        config::SpaJson,
+        to_spa_json,
     };
     use expect_test::expect;
 
@@ -281,7 +281,7 @@ mod tests {
         };
 
         let cfg = Config::from_apo("test-eq", &config);
-        let out = SpaJson::new(&serde_json::to_value(&cfg).unwrap()).to_string();
+        let out = to_spa_json(&cfg);
 
         expect![[r#"
             {

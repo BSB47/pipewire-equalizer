@@ -4,6 +4,7 @@ use std::io;
 use std::sync::Mutex;
 
 use pw_util::api;
+use pw_util::config::ModuleArgs;
 use pw_util::pipewire::{self, context::ContextRc, main_loop::MainLoopRc};
 use tokio::sync::mpsc;
 
@@ -11,11 +12,7 @@ use crate::tui::Notif;
 
 pub enum Message {
     Terminate,
-    LoadModule {
-        name: String,
-        args: String,
-        band_count: usize,
-    },
+    LoadModule { name: String, args: Box<ModuleArgs> },
 }
 
 pub fn pw_thread(
@@ -35,36 +32,35 @@ pub fn pw_thread(
         let context = context.clone();
         move |msg| match msg {
             Message::Terminate => mainloop.quit(),
-            Message::LoadModule {
-                name,
-                args,
-                band_count,
-            } => {
+            Message::LoadModule { name, args } => {
+                let band_count = args.filter_graph.nodes.len();
+                let spa_json_args = pw_util::to_spa_json(&args);
+
                 let mut modules = modules.lock().unwrap();
 
-                // Check if we already have a module for this band count
-                if let Entry::Vacant(e) = modules.entry(band_count) {
-                    tracing::info!(band_count, "Loading new module for band count");
-                    let module = match api::load_module(&context, &name, &args) {
-                        Ok(module) => module,
-                        Err(err) => {
-                            let _ = notifs.blocking_send(Notif::Error(err));
-                            return;
-                        }
-                    };
+                let module = match modules.entry(band_count) {
+                    Entry::Occupied(entry) => entry.into_mut(),
+                    Entry::Vacant(entry) => {
+                        tracing::info!(band_count, "Loading new module for band count");
+                        let module = match api::load_module(&context, &name, &spa_json_args) {
+                            Ok(module) => module,
+                            Err(err) => {
+                                let _ = notifs.blocking_send(Notif::Error(err));
+                                return;
+                            }
+                        };
 
-                    let info = module.info();
-                    let _ = notifs.blocking_send(Notif::ModuleLoaded {
-                        id: info.id(),
-                        name: info.name().to_string(),
-                    });
+                        entry.insert(module)
+                    }
+                };
 
-                    e.insert(module);
-                } else {
-                    tracing::info!(band_count, "Reusing existing module for band count");
-                }
+                let info = module.info();
 
-                // TODO: Set this module's sink as default and update params
+                let _ = notifs.blocking_send(Notif::ModuleLoaded {
+                    id: info.id(),
+                    name: info.name().to_string(),
+                    media_name: args.media_name.clone(),
+                });
             }
         }
     });

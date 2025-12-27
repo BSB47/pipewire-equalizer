@@ -4,13 +4,12 @@ mod tui;
 use anyhow::Context as _;
 use clap::Parser;
 use pw_eq::{find_eq_node, use_eq};
-use pw_util::config::{BAND_PREFIX, SpaJson};
+use pw_util::config::BAND_PREFIX;
 use std::collections::BTreeMap;
 use std::fs::File;
 use std::path::PathBuf;
 use tabled::Table;
 use tokio::fs;
-use tokio::process::Command;
 use tracing_subscriber::EnvFilter;
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt as _;
@@ -148,9 +147,7 @@ async fn create_eq(
 
     // Generate the filter-chain config
     let config_content = pw_util::config::Config::from_apo(&name, &apo_config);
-    let json = serde_json::to_value(&config_content)
-        .context("failed to serialize PipeWire config to JSON")?;
-    let content = SpaJson::new(&json).to_string();
+    let content = pw_util::to_spa_json(&config_content);
 
     // Get the config directory path
     let config_dir = dirs::config_dir()
@@ -182,7 +179,7 @@ async fn set_band(
     Set {
         profile,
         band,
-        freq,
+        freq: frequency,
         gain,
         q,
         persist,
@@ -194,36 +191,12 @@ async fn set_band(
 
     let node = find_eq_node(&profile).await?;
 
-    // Build the params array for pw-cli
-    let mut params = Vec::new();
-
-    if let Some(freq_val) = freq {
-        params.push(format!(r#""{BAND_PREFIX}{band}:Freq""#));
-        params.push(freq_val.to_string());
-    }
-
-    if let Some(gain_val) = gain {
-        params.push(format!(r#""{BAND_PREFIX}{band}:Gain""#));
-        params.push(gain_val.to_string());
-    }
-
-    if let Some(q_val) = q {
-        params.push(format!(r#""{BAND_PREFIX}{band}:Q""#));
-        params.push(q_val.to_string());
-    }
-
-    let output = Command::new("pw-cli")
-        .arg("set-param")
-        .arg(node.id.to_string())
-        .arg("Props")
-        .arg(format!("{{ params = [ {} ] }}", params.join(", ")))
-        .output()
-        .await
-        .context("Failed to execute pw-cli")?;
-
-    if !output.status.success() {
-        anyhow::bail!("pw-cli failed: {}", String::from_utf8_lossy(&output.stderr));
-    }
+    pw_eq::update_band(
+        node.id,
+        band as usize,
+        pw_eq::UpdateBand { frequency, gain, q },
+    )
+    .await?;
 
     println!(
         "Updated band {} on EQ '{}' (node {})",

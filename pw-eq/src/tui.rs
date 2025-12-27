@@ -6,7 +6,7 @@ use crossterm::{
     terminal::{self, EnterAlternateScreen},
 };
 use futures_util::{Stream, StreamExt as _};
-use pw_util::pipewire;
+use pw_util::{config::ModuleArgs, pipewire};
 use ratatui::{
     Terminal,
     prelude::{Backend, Constraint, CrosstermBackend, Direction, Layout, Rect},
@@ -173,17 +173,13 @@ impl EqState {
         }
     }
 
-    fn to_spa_json_args(&self) -> String {
+    fn to_module_args(&self) -> ModuleArgs {
         let apo_config = self.to_apo_config();
-        let module_args = pw_util::config::Module::from_apo(
+        pw_util::config::Module::from_apo(
             &format!("{}-{}", self.name, self.bands.len()),
             &apo_config,
         )
-        .args;
-        let json = serde_json::to_value(&module_args).expect("Failed to serialize config");
-        let spa_json = pw_util::config::SpaJson::new(&json).to_string();
-        tracing::debug!(config = %spa_json, "Generated SPA JSON config");
-        spa_json
+        .args
     }
 }
 
@@ -204,7 +200,11 @@ pub async fn run() -> anyhow::Result<()> {
 }
 
 pub enum Notif {
-    ModuleLoaded { id: u32, name: String },
+    ModuleLoaded {
+        id: u32,
+        name: String,
+        media_name: String,
+    },
     Error(anyhow::Error),
 }
 
@@ -260,7 +260,7 @@ where
                         break;
                     }
                 }
-                Some(notif) = self.notifs.recv() => self.on_notif(notif),
+                Some(notif) = self.notifs.recv() => self.on_notif(notif).await,
             }
         }
 
@@ -269,10 +269,17 @@ where
         Ok(())
     }
 
-    fn on_notif(&mut self, notif: Notif) {
+    async fn on_notif(&mut self, notif: Notif) {
         match notif {
-            Notif::ModuleLoaded { id, name } => {
-                tracing::info!(id, name, "module loaded");
+            Notif::ModuleLoaded {
+                id,
+                name,
+                media_name,
+            } => {
+                tracing::info!(id, name, media_name, "module loaded");
+                pw_eq::use_eq(&media_name).await.unwrap_or_else(|err| {
+                    tracing::error!(error = &*err, "failed to use EQ");
+                });
             }
             Notif::Error(err) => {
                 tracing::error!(error = &*err, "PipeWire error");
@@ -329,8 +336,7 @@ where
                 tracing::info!("Loading PipeWire EQ module");
                 let _ = self.pw_tx.send(pw::Message::LoadModule {
                     name: "libpipewire-module-filter-chain".into(),
-                    args: self.eq_state.to_spa_json_args(),
-                    band_count: self.eq_state.bands.len(),
+                    args: Box::new(self.eq_state.to_module_args()),
                 });
             }
 
