@@ -177,7 +177,9 @@ impl EqState {
         let apo_config = self.to_apo_config();
         let module_args = pw_util::config::Module::from_apo(&self.name, &apo_config).args;
         let json = serde_json::to_value(&module_args).expect("Failed to serialize config");
-        pw_util::config::SpaJson::new(&json).to_string()
+        let spa_json = pw_util::config::SpaJson::new(&json).to_string();
+        tracing::debug!(config = %spa_json, "Generated SPA JSON config");
+        spa_json
     }
 }
 
@@ -285,7 +287,7 @@ where
         tracing::debug!(key = ?key, "key event");
         match key.code {
             // Quit
-            KeyCode::Esc => return Ok(ControlFlow::Break(())),
+            KeyCode::Esc | KeyCode::Char('q') => return Ok(ControlFlow::Break(())),
 
             // Navigation
             KeyCode::Tab | KeyCode::Char('j') => self.eq_state.select_next_band(),
@@ -306,12 +308,18 @@ where
             KeyCode::Char('G') => self.eq_state.adjust_gain(-0.1),
 
             // Q adjustment
-            KeyCode::Char('q') => self.eq_state.adjust_q(0.1),
-            KeyCode::Char('Q') => self.eq_state.adjust_q(-0.1),
+            KeyCode::Char('z') => self.eq_state.adjust_q(0.1),
+            KeyCode::Char('Z') => self.eq_state.adjust_q(-0.1),
 
             // Band management
             KeyCode::Char('a') => self.eq_state.add_band(),
             KeyCode::Char('d') => self.eq_state.delete_selected_band(),
+            KeyCode::Char('0') => {
+                // Zero the gain on current band
+                if let Some(band) = self.eq_state.bands.get_mut(self.eq_state.selected_band) {
+                    band.gain = 0.0;
+                }
+            }
 
             KeyCode::Char('l') => {
                 tracing::info!("Loading PipeWire EQ module");
@@ -354,7 +362,7 @@ where
 
             // Footer/Help
             let help = Paragraph::new(
-                "Tab/Shift-Tab: select | f/F: freq ±10Hz | g/G: gain ±0.1dB | z/Z: Q ±0.1 | a: add | d: delete | q/Esc: quit"
+                "Tab/Shift-Tab/j/k: select | f/F: freq | g/G: gain | z/Z: Q | a: add | d: delete | 0: zero gain | Esc/q: quit"
             )
             .block(Block::default().borders(Borders::ALL));
             f.render_widget(help, chunks[2]);
