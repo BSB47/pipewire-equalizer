@@ -129,6 +129,32 @@ pub async fn set_default(node_id: u32) -> Result<()> {
     Ok(())
 }
 
+pub async fn get_default_audio_sink() -> Result<u32> {
+    let output = Command::new("wpctl")
+        .arg("inspect")
+        .arg("@DEFAULT_AUDIO_SINK@")
+        .output()
+        .await
+        .context("Failed to execute wpctl")?;
+
+    if !output.status.success() {
+        anyhow::bail!("wpctl failed: {}", String::from_utf8_lossy(&output.stderr));
+    }
+
+    // Parse output to extract id from first line (e.g., "id 123, type PipeWire:Interface:Node")
+    let stdout = String::from_utf8(output.stdout).context("wpctl output is not valid UTF-8")?;
+    let first_line = stdout.lines().next().context("wpctl output is empty")?;
+
+    // Extract id from "id <number>,"
+    let id_str = first_line
+        .split_whitespace()
+        .nth(1)
+        .and_then(|s| s.trim_end_matches(',').parse::<u32>().ok())
+        .context("Failed to parse node id from wpctl output")?;
+
+    Ok(id_str)
+}
+
 pub fn to_spa_json<T: serde::Serialize>(value: &T) -> String {
     let json_value = serde_json::to_value(value).expect("Failed to serialize to JSON value");
     self::config::SpaJson::new(&json_value).to_string()

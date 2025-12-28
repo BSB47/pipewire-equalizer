@@ -1,5 +1,6 @@
 use std::{
-    backtrace::Backtrace, io, num::NonZero, ops::ControlFlow, pin::pin, sync::mpsc::Receiver,
+    backtrace::Backtrace, error::Error, io, num::NonZero, ops::ControlFlow, pin::pin,
+    sync::mpsc::Receiver,
 };
 
 use crossterm::{
@@ -218,6 +219,8 @@ pub struct App<B: Backend + io::Write> {
     panic_rx: Receiver<(String, Backtrace)>,
     eq_state: EqState,
     active_node_id: Option<u32>,
+    original_default_sink: Option<u32>,
+    pw_handle: Option<std::thread::JoinHandle<io::Result<()>>>,
 }
 
 impl<B> App<B>
@@ -228,7 +231,7 @@ where
     pub fn new(term: Terminal<B>, panic_rx: Receiver<(String, Backtrace)>) -> io::Result<Self> {
         let (pw_tx, rx) = pipewire::channel::channel();
         let (notifs_tx, notifs) = mpsc::channel(100);
-        std::thread::spawn(|| pw_thread(notifs_tx, rx));
+        let pw_handle = std::thread::spawn(|| pw_thread(notifs_tx, rx));
 
         Ok(Self {
             term,
@@ -237,6 +240,8 @@ where
             notifs,
             eq_state: EqState::new("pweq".to_string()),
             active_node_id: None,
+            original_default_sink: None,
+            pw_handle: Some(pw_handle),
         })
     }
 
@@ -251,9 +256,17 @@ where
     }
 
     pub async fn run(
-        &mut self,
+        mut self,
         events: impl Stream<Item = io::Result<Event>>,
     ) -> anyhow::Result<()> {
+        // Save the current default sink so we can restore it on exit
+        self.original_default_sink = pw_util::get_default_audio_sink()
+            .await
+            .inspect_err(|err| {
+                tracing::warn!(error = %err, "Failed to get default audio sink");
+            })
+            .ok();
+
         let mut events = pin!(events.fuse());
 
         loop {
@@ -270,6 +283,25 @@ where
         }
 
         let _ = self.pw_tx.send(pw::Message::Terminate);
+
+        // Restore the original default sink before exiting
+        if let Some(sink_id) = self.original_default_sink {
+            tracing::info!(sink_id, "Restoring original default sink");
+            pw_util::set_default(sink_id).await.inspect_err(|err| {
+                tracing::error!(error = %err, "Failed to restore original default sink");
+            })?;
+        }
+
+        if let Some(handle) = self.pw_handle.take() {
+            match handle.join() {
+                Ok(Ok(())) => tracing::info!("PipeWire thread exited cleanly"),
+                Ok(Err(err)) => tracing::error!(
+                    error = &err as &dyn Error,
+                    "PipeWire thread exited with error"
+                ),
+                Err(err) => tracing::error!(error = ?err, "PipeWire thread panicked"),
+            }
+        }
 
         Ok(())
     }
