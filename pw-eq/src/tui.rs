@@ -433,25 +433,15 @@ where
             let band_idx = NonZero::new(self.eq_state.selected_band + 1).unwrap();
             let band = &self.eq_state.filters[self.eq_state.selected_band];
 
-            // If filter type or mute state changed, we need to update coefficients directly
-            let update =
-                if before_band.filter_type != band.filter_type || before_band.muted != band.muted {
-                    let (b0, b1, b2, a0, a1, a2) = band.biquad_coeffs(self.sample_rate);
-                    UpdateFilter::Coeffs {
-                        b0,
-                        b1,
-                        b2,
-                        a0,
-                        a1,
-                        a2,
-                    }
-                } else {
-                    UpdateFilter::Params {
-                        frequency: Some(band.frequency),
-                        gain: Some(band.gain),
-                        q: Some(band.q),
-                    }
-                };
+            // Always send both params and coefficients. This is a bit weird but seems to be
+            // necessary to get the changes to apply correctly in all cases.
+            let (b0, b1, b2, a0, a1, a2) = band.biquad_coeffs(self.sample_rate);
+            let update = UpdateFilter {
+                frequency: Some(band.frequency),
+                gain: Some(if band.muted { 0.0 } else { band.gain }),
+                q: Some(band.q),
+                coeffs: Some((b0, b1, b2, a0, a1, a2)),
+            };
 
             tokio::spawn(async move {
                 if let Err(err) = update_filter(node_id, band_idx, update).await {

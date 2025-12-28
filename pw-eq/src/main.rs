@@ -194,7 +194,12 @@ async fn set_band(
     pw_eq::update_filter(
         node.id,
         band,
-        pw_eq::UpdateFilter::Params { frequency, gain, q },
+        pw_eq::UpdateFilter {
+            frequency,
+            gain,
+            q,
+            coeffs: None,
+        },
     )
     .await?;
 
