@@ -10,7 +10,11 @@ use crossterm::{
     terminal::{self, EnterAlternateScreen},
 };
 use futures_util::{Stream, StreamExt as _};
-use pw_util::{apo::FilterType, config::ModuleArgs, pipewire};
+use pw_util::{
+    apo::{self, FilterType},
+    config::ModuleArgs,
+    pipewire,
+};
 use ratatui::{
     Terminal,
     prelude::{Backend, Constraint, CrosstermBackend, Direction, Layout, Rect},
@@ -25,7 +29,7 @@ use crate::pw::{self, pw_thread};
 // EQ state
 struct EqState {
     name: String,
-    bands: Vec<Filter>,
+    filters: Vec<Filter>,
     selected_band: usize,
     max_bands: usize,
 }
@@ -34,48 +38,36 @@ impl EqState {
     fn new(name: String) -> Self {
         Self {
             name,
-            bands: vec![
+            filters: vec![
                 Filter {
                     frequency: 50.0,
-                    gain: 0.0,
-                    q: 1.0,
                     filter_type: FilterType::LowShelf,
+                    ..Default::default()
                 },
                 Filter {
                     frequency: 100.0,
-                    gain: 0.0,
-                    q: 1.0,
-                    filter_type: FilterType::Peaking,
+                    ..Default::default()
                 },
                 Filter {
                     frequency: 200.0,
-                    gain: 0.0,
-                    q: 1.0,
-                    filter_type: FilterType::Peaking,
+                    ..Default::default()
                 },
                 Filter {
                     frequency: 500.0,
-                    gain: 0.0,
-                    q: 1.0,
-                    filter_type: FilterType::Peaking,
+                    ..Default::default()
                 },
                 Filter {
                     frequency: 2000.0,
-                    gain: 0.0,
-                    q: 1.0,
-                    filter_type: FilterType::Peaking,
+                    ..Default::default()
                 },
                 Filter {
                     frequency: 5000.0,
-                    gain: 0.0,
-                    q: 1.0,
-                    filter_type: FilterType::Peaking,
+                    ..Default::default()
                 },
                 Filter {
                     frequency: 10000.0,
-                    gain: 0.0,
-                    q: 1.0,
                     filter_type: FilterType::HighShelf,
+                    ..Default::default()
                 },
             ],
             selected_band: 0,
@@ -84,15 +76,15 @@ impl EqState {
     }
 
     fn add_band(&mut self) {
-        if self.bands.len() >= self.max_bands {
+        if self.filters.len() >= self.max_bands {
             return;
         }
 
-        let current_band = &self.bands[self.selected_band];
+        let current_band = &self.filters[self.selected_band];
 
         // Calculate new frequency between current and next band
-        let new_freq = if self.selected_band + 1 < self.bands.len() {
-            let next_band = &self.bands[self.selected_band + 1];
+        let new_freq = if self.selected_band + 1 < self.filters.len() {
+            let next_band = &self.filters[self.selected_band + 1];
             // Geometric mean (better for logarithmic frequency scale)
             (current_band.frequency * next_band.frequency).sqrt()
         } else {
@@ -100,28 +92,29 @@ impl EqState {
             (current_band.frequency * 20000.0).sqrt().min(20000.0)
         };
 
-        let new_band = Filter {
+        let new_filter = Filter {
             frequency: new_freq,
             gain: 0.0,
             q: 1.0,
             filter_type: FilterType::Peaking,
+            muted: false,
         };
 
-        self.bands.insert(self.selected_band + 1, new_band);
+        self.filters.insert(self.selected_band + 1, new_filter);
         self.selected_band += 1;
     }
 
     fn delete_selected_band(&mut self) {
-        if self.bands.len() > 1 {
-            self.bands.remove(self.selected_band);
-            if self.selected_band >= self.bands.len() {
-                self.selected_band = self.bands.len().saturating_sub(1);
+        if self.filters.len() > 1 {
+            self.filters.remove(self.selected_band);
+            if self.selected_band >= self.filters.len() {
+                self.selected_band = self.filters.len().saturating_sub(1);
             }
         }
     }
 
     fn select_next_band(&mut self) {
-        if self.selected_band < self.bands.len().saturating_sub(1) {
+        if self.selected_band < self.filters.len().saturating_sub(1) {
             self.selected_band += 1;
         }
     }
@@ -131,25 +124,25 @@ impl EqState {
     }
 
     fn adjust_freq(&mut self, f: impl FnOnce(f64) -> f64) {
-        if let Some(band) = self.bands.get_mut(self.selected_band) {
+        if let Some(band) = self.filters.get_mut(self.selected_band) {
             band.frequency = f(band.frequency).clamp(20.0, 20000.0);
         }
     }
 
     fn adjust_gain(&mut self, f: impl FnOnce(f64) -> f64) {
-        if let Some(band) = self.bands.get_mut(self.selected_band) {
+        if let Some(band) = self.filters.get_mut(self.selected_band) {
             band.gain = f(band.gain).clamp(-12.0, 12.0);
         }
     }
 
     fn adjust_q(&mut self, f: impl FnOnce(f64) -> f64) {
-        if let Some(band) = self.bands.get_mut(self.selected_band) {
+        if let Some(band) = self.filters.get_mut(self.selected_band) {
             band.q = f(band.q).clamp(0.1, 10.0);
         }
     }
 
     fn cycle_filter_type(&mut self) {
-        if let Some(band) = self.bands.get_mut(self.selected_band) {
+        if let Some(band) = self.filters.get_mut(self.selected_band) {
             band.filter_type = match band.filter_type {
                 FilterType::Peaking => FilterType::LowShelf,
                 FilterType::LowShelf => FilterType::HighShelf,
@@ -158,14 +151,20 @@ impl EqState {
         }
     }
 
-    fn to_apo_config(&self) -> pw_util::apo::Config {
+    fn toggle_mute(&mut self) {
+        if let Some(band) = self.filters.get_mut(self.selected_band) {
+            band.muted = !band.muted;
+        }
+    }
+
+    fn to_apo_config(&self) -> apo::Config {
         let filters = self
-            .bands
+            .filters
             .iter()
             .enumerate()
-            .map(|(idx, band)| pw_util::apo::Filter {
+            .map(|(idx, band)| apo::Filter {
                 number: (idx + 1) as u32,
-                enabled: true,
+                enabled: !band.muted,
                 filter_type: band.filter_type,
                 freq: band.frequency as f32,
                 gain: band.gain as f32,
@@ -173,7 +172,7 @@ impl EqState {
             })
             .collect();
 
-        pw_util::apo::Config {
+        apo::Config {
             preamp: None,
             filters,
         }
@@ -182,7 +181,7 @@ impl EqState {
     fn to_module_args(&self) -> ModuleArgs {
         let apo_config = self.to_apo_config();
         pw_util::config::Module::from_apo(
-            &format!("{}-{}", self.name, self.bands.len()),
+            &format!("{}-{}", self.name, self.filters.len()),
             &apo_config,
         )
         .args
@@ -203,7 +202,7 @@ impl EqState {
 
                 // Sum magnitude response from all bands
                 let total_db: f64 = self
-                    .bands
+                    .filters
                     .iter()
                     .map(|band| band.magnitude_db_at(freq, sample_rate))
                     .sum();
@@ -369,7 +368,7 @@ where
         tracing::debug!(key = ?key, "key event");
 
         let before_idx = self.eq_state.selected_band;
-        let before_band = self.eq_state.bands[self.eq_state.selected_band];
+        let before_band = self.eq_state.filters[self.eq_state.selected_band];
 
         match key.code {
             // Quit
@@ -383,7 +382,7 @@ where
             KeyCode::BackTab | KeyCode::Char('k') => self.eq_state.select_prev_band(),
             KeyCode::Char(c @ '1'..='9') => {
                 let idx = c.to_digit(10).unwrap() as usize - 1;
-                if idx < self.eq_state.bands.len() {
+                if idx < self.eq_state.filters.len() {
                     self.eq_state.selected_band = idx;
                 }
             }
@@ -403,12 +402,15 @@ where
             // Filter type
             KeyCode::Char('t') => self.eq_state.cycle_filter_type(),
 
+            // Mute
+            KeyCode::Char('m') => self.eq_state.toggle_mute(),
+
             // Band management
             KeyCode::Char('a') => self.eq_state.add_band(),
             KeyCode::Char('d') => self.eq_state.delete_selected_band(),
             KeyCode::Char('0') => {
                 // Zero the gain on current band
-                if let Some(band) = self.eq_state.bands.get_mut(self.eq_state.selected_band) {
+                if let Some(band) = self.eq_state.filters.get_mut(self.eq_state.selected_band) {
                     band.gain = 0.0;
                 }
             }
@@ -426,29 +428,30 @@ where
 
         if let Some(node_id) = self.active_node_id
             && self.eq_state.selected_band == before_idx
-            && self.eq_state.bands[self.eq_state.selected_band] != before_band
+            && self.eq_state.filters[self.eq_state.selected_band] != before_band
         {
             let band_idx = NonZero::new(self.eq_state.selected_band + 1).unwrap();
-            let band = &self.eq_state.bands[self.eq_state.selected_band];
+            let band = &self.eq_state.filters[self.eq_state.selected_band];
 
-            // If filter type changed, we need to update coefficients directly
-            let update = if before_band.filter_type != band.filter_type {
-                let (b0, b1, b2, a0, a1, a2) = band.biquad_coeffs(self.sample_rate);
-                UpdateFilter::Coeffs {
-                    b0,
-                    b1,
-                    b2,
-                    a0,
-                    a1,
-                    a2,
-                }
-            } else {
-                UpdateFilter::Params {
-                    frequency: Some(band.frequency),
-                    gain: Some(band.gain),
-                    q: Some(band.q),
-                }
-            };
+            // If filter type or mute state changed, we need to update coefficients directly
+            let update =
+                if before_band.filter_type != band.filter_type || before_band.muted != band.muted {
+                    let (b0, b1, b2, a0, a1, a2) = band.biquad_coeffs(self.sample_rate);
+                    UpdateFilter::Coeffs {
+                        b0,
+                        b1,
+                        b2,
+                        a0,
+                        a1,
+                        a2,
+                    }
+                } else {
+                    UpdateFilter::Params {
+                        frequency: Some(band.frequency),
+                        gain: Some(band.gain),
+                        q: Some(band.q),
+                    }
+                };
 
             tokio::spawn(async move {
                 if let Err(err) = update_filter(node_id, band_idx, update).await {
@@ -478,7 +481,7 @@ where
             let header = Paragraph::new(format!(
                 "PipeWire EQ: {} | Bands: {}/{} | Sample Rate: {:.0} Hz",
                 eq_state.name,
-                eq_state.bands.len(),
+                eq_state.filters.len(),
                 eq_state.max_bands,
                 sample_rate
             ))
@@ -493,7 +496,7 @@ where
 
             // Footer/Help
             let help = Paragraph::new(
-                "Tab/j/k: select | t: type | f/F: freq | g/G: gain | q/Q: Q | a: add | d: delete | 0: zero | Esc/C-c: quit"
+                "Tab/j/k: select | t: type | m: mute | f/F: freq | g/G: gain | q/Q: Q | a: add | d: delete | 0: zero | Esc/C-c: quit"
             )
             .block(Block::default().borders(Borders::ALL));
             f.render_widget(help, chunks[3]);
@@ -503,7 +506,7 @@ where
 
     fn draw_band_table(f: &mut ratatui::Frame, area: Rect, eq_state: &EqState) {
         let rows: Vec<Row> = eq_state
-            .bands
+            .filters
             .iter()
             .enumerate()
             .map(|(idx, band)| {
@@ -534,41 +537,69 @@ where
 
                 let is_selected = idx == eq_state.selected_band;
 
+                // Dim muted filters
+                let (num_color, type_color, freq_color, q_color) = if band.muted {
+                    (
+                        Color::DarkGray,
+                        Color::DarkGray,
+                        Color::DarkGray,
+                        Color::DarkGray,
+                    )
+                } else if is_selected {
+                    (Color::Yellow, Color::Blue, Color::Cyan, Color::Magenta)
+                } else {
+                    (Color::DarkGray, Color::Gray, Color::White, Color::White)
+                };
+
+                let final_gain_color = if band.muted {
+                    Color::DarkGray
+                } else {
+                    gain_color
+                };
+
                 // Create cells with individual styling
                 let cells = vec![
-                    Cell::from(format!("{}", idx + 1)).style(if is_selected {
+                    Cell::from(format!("{}", idx + 1)).style(
+                        Style::default().fg(num_color).add_modifier(
+                            if is_selected && !band.muted {
+                                Modifier::BOLD
+                            } else {
+                                Modifier::empty()
+                            },
+                        ),
+                    ),
+                    Cell::from(type_str).style(Style::default().fg(type_color).add_modifier(
+                        if is_selected && !band.muted {
+                            Modifier::BOLD
+                        } else {
+                            Modifier::empty()
+                        },
+                    )),
+                    Cell::from(freq_str).style(Style::default().fg(freq_color).add_modifier(
+                        if is_selected && !band.muted {
+                            Modifier::BOLD
+                        } else {
+                            Modifier::empty()
+                        },
+                    )),
+                    Cell::from(format!("{:+.1}", band.gain)).style(
+                        Style::default().fg(final_gain_color).add_modifier(
+                            if is_selected && !band.muted {
+                                Modifier::BOLD
+                            } else {
+                                Modifier::empty()
+                            },
+                        ),
+                    ),
+                    Cell::from(format!("{:.2}", band.q)).style(
                         Style::default()
-                            .fg(Color::Yellow)
-                            .add_modifier(Modifier::BOLD)
-                    } else {
-                        Style::default().fg(Color::DarkGray)
-                    }),
-                    Cell::from(type_str).style(if is_selected {
-                        Style::default()
-                            .fg(Color::Blue)
-                            .add_modifier(Modifier::BOLD)
-                    } else {
-                        Style::default().fg(Color::Gray)
-                    }),
-                    Cell::from(freq_str).style(if is_selected {
-                        Style::default()
-                            .fg(Color::Cyan)
-                            .add_modifier(Modifier::BOLD)
-                    } else {
-                        Style::default().fg(Color::White)
-                    }),
-                    Cell::from(format!("{:+.1}", band.gain)).style(if is_selected {
-                        Style::default().fg(gain_color).add_modifier(Modifier::BOLD)
-                    } else {
-                        Style::default().fg(gain_color)
-                    }),
-                    Cell::from(format!("{:.2}", band.q)).style(if is_selected {
-                        Style::default()
-                            .fg(Color::Magenta)
-                            .add_modifier(Modifier::BOLD)
-                    } else {
-                        Style::default().fg(Color::White)
-                    }),
+                            .fg(q_color)
+                            .add_modifier(if is_selected && !band.muted {
+                                Modifier::BOLD
+                            } else {
+                                Modifier::empty()
+                            }),
+                    ),
                 ];
 
                 Row::new(cells)

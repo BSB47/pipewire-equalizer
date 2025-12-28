@@ -7,6 +7,7 @@ pub struct Filter {
     pub gain: f64,
     pub q: f64,
     pub filter_type: FilterType,
+    pub muted: bool,
 }
 
 impl Default for Filter {
@@ -16,6 +17,7 @@ impl Default for Filter {
             gain: 0.0,
             q: 1.0,
             filter_type: FilterType::Peaking,
+            muted: false,
         }
     }
 }
@@ -23,6 +25,7 @@ impl Default for Filter {
 impl Filter {
     /// Calculate biquad coefficients based on filter type
     /// Returns normalized (b0, b1, b2, a0, a1, a2) where a0 = 1.0
+    /// If muted, calculates with 0 gain (bypass)
     pub fn biquad_coeffs(&self, sample_rate: f64) -> (f64, f64, f64, f64, f64, f64) {
         use std::f64::consts::PI;
 
@@ -30,7 +33,10 @@ impl Filter {
         let cos_w0 = w0.cos();
         let sin_w0 = w0.sin();
         let alpha = sin_w0 / (2.0 * self.q);
-        let a = 10_f64.powf(self.gain / 40.0); // dB to amplitude
+
+        // When muted, use 0 gain (no effect)
+        let gain = if self.muted { 0.0 } else { self.gain };
+        let a = 10_f64.powf(gain / 40.0); // dB to amplitude
 
         let (b0, b1, b2, a0, a1, a2) = match self.filter_type {
             FilterType::Peaking => {
@@ -70,6 +76,11 @@ impl Filter {
 
     /// Calculate magnitude response in dB at a given frequency
     pub fn magnitude_db_at(&self, freq: f64, sample_rate: f64) -> f64 {
+        // When muted, filter has no effect (0 dB)
+        if self.muted {
+            return 0.0;
+        }
+
         use std::f64::consts::PI;
 
         let (b0, b1, b2, a0, a1, a2) = self.biquad_coeffs(sample_rate);
