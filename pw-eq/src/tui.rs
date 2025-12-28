@@ -14,7 +14,7 @@ use ratatui::{
     Terminal,
     prelude::{Backend, Constraint, CrosstermBackend, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
-    widgets::{Block, Borders, Paragraph, Row, Table},
+    widgets::{Axis, Block, Borders, Chart, Dataset, GraphType, Paragraph, Row, Table},
 };
 use tokio::sync::mpsc;
 
@@ -35,6 +35,50 @@ impl Default for Band {
             gain: 0.0,
             q: 1.0,
         }
+    }
+}
+
+impl Band {
+    /// Calculate biquad coefficients for peaking filter
+    /// Returns (b0, b1, b2, a0, a1, a2)
+    fn biquad_coeffs(&self, sample_rate: f64) -> (f64, f64, f64, f64, f64, f64) {
+        use std::f64::consts::PI;
+
+        let w0 = 2.0 * PI * self.frequency / sample_rate;
+        let cos_w0 = w0.cos();
+        let sin_w0 = w0.sin();
+        let alpha = sin_w0 / (2.0 * self.q);
+        let a = 10_f64.powf(self.gain / 40.0); // dB to amplitude
+
+        let b0 = 1.0 + alpha * a;
+        let b1 = -2.0 * cos_w0;
+        let b2 = 1.0 - alpha * a;
+        let a0 = 1.0 + alpha / a;
+        let a1 = -2.0 * cos_w0;
+        let a2 = 1.0 - alpha / a;
+
+        (b0, b1, b2, a0, a1, a2)
+    }
+
+    /// Calculate magnitude response in dB at a given frequency
+    fn magnitude_db_at(&self, freq: f64, sample_rate: f64) -> f64 {
+        use std::f64::consts::PI;
+
+        let (b0, b1, b2, a0, a1, a2) = self.biquad_coeffs(sample_rate);
+        let w = 2.0 * PI * freq / sample_rate;
+
+        // Numerator (zeros)
+        let re_num = b0 + b1 * w.cos() + b2 * (2.0 * w).cos();
+        let im_num = b1 * w.sin() + b2 * (2.0 * w).sin();
+
+        // Denominator (poles)
+        let re_den = a0 + a1 * w.cos() + a2 * (2.0 * w).cos();
+        let im_den = a1 * w.sin() + a2 * (2.0 * w).sin();
+
+        let mag_num = (re_num * re_num + im_num * im_num).sqrt();
+        let mag_den = (re_den * re_den + im_den * im_den).sqrt();
+
+        20.0 * (mag_num / mag_den).log10()
     }
 }
 
@@ -185,6 +229,31 @@ impl EqState {
         )
         .args
     }
+
+    /// Generate frequency response curve data for visualization
+    /// Returns Vec of (frequency, magnitude_db) pairs
+    fn frequency_response_curve(&self, num_points: usize, sample_rate: f64) -> Vec<(f64, f64)> {
+        // Generate logarithmically spaced frequency points from 20 Hz to 20 kHz
+        let log_min = 20_f64.log10();
+        let log_max = 20000_f64.log10();
+
+        (0..num_points)
+            .map(|i| {
+                let t = i as f64 / (num_points - 1) as f64;
+                let log_freq = log_min + t * (log_max - log_min);
+                let freq = 10_f64.powf(log_freq);
+
+                // Sum magnitude response from all bands
+                let total_db: f64 = self
+                    .bands
+                    .iter()
+                    .map(|band| band.magnitude_db_at(freq, sample_rate))
+                    .sum();
+
+                (freq, total_db)
+            })
+            .collect()
+    }
 }
 
 pub async fn run() -> anyhow::Result<()> {
@@ -221,6 +290,7 @@ pub struct App<B: Backend + io::Write> {
     active_node_id: Option<u32>,
     original_default_sink: Option<u32>,
     pw_handle: Option<std::thread::JoinHandle<io::Result<()>>>,
+    sample_rate: f64,
 }
 
 impl<B> App<B>
@@ -242,6 +312,8 @@ where
             active_node_id: None,
             original_default_sink: None,
             pw_handle: Some(pw_handle),
+            // TODO query
+            sample_rate: 48000.0,
         })
     }
 
@@ -412,22 +484,25 @@ where
 
     fn draw(&mut self) -> anyhow::Result<()> {
         let eq_state = &self.eq_state;
+        let sample_rate = self.sample_rate;
         self.term.draw(|f| {
             let chunks = Layout::default()
                 .direction(Direction::Vertical)
                 .constraints([
-                    Constraint::Length(3), // Header
-                    Constraint::Min(0),    // Main content
-                    Constraint::Length(3), // Footer
+                    Constraint::Length(3),      // Header
+                    Constraint::Min(10),        // Band table
+                    Constraint::Percentage(40), // Frequency response chart
+                    Constraint::Length(3),      // Footer
                 ])
                 .split(f.area());
 
             // Header
             let header = Paragraph::new(format!(
-                "PipeWire EQ: {} | Bands: {}/{}",
+                "PipeWire EQ: {} | Bands: {}/{} | Sample Rate: {:.0} Hz",
                 eq_state.name,
                 eq_state.bands.len(),
-                eq_state.max_bands
+                eq_state.max_bands,
+                sample_rate
             ))
             .block(Block::default().borders(Borders::ALL));
             f.render_widget(header, chunks[0]);
@@ -435,12 +510,15 @@ where
             // Band table
             Self::draw_band_table(f, chunks[1], eq_state);
 
+            // Frequency response chart
+            Self::draw_frequency_response(f, chunks[2], eq_state, sample_rate);
+
             // Footer/Help
             let help = Paragraph::new(
                 "Tab/Shift-Tab/j/k: select | f/F: freq | g/G: gain | z/Z: Q | a: add | d: delete | 0: zero gain | Esc/q: quit"
             )
             .block(Block::default().borders(Borders::ALL));
-            f.render_widget(help, chunks[2]);
+            f.render_widget(help, chunks[3]);
         })?;
         Ok(())
     }
@@ -491,6 +569,72 @@ where
         .block(Block::default().borders(Borders::ALL).title("Bands"));
 
         f.render_widget(table, area);
+    }
+
+    fn draw_frequency_response(
+        f: &mut ratatui::Frame,
+        area: Rect,
+        eq_state: &EqState,
+        sample_rate: f64,
+    ) {
+        const NUM_POINTS: usize = 200;
+
+        // Generate frequency response curve data
+        let curve_data = eq_state.frequency_response_curve(NUM_POINTS, sample_rate);
+
+        // Convert to chart data format (log x-axis manually handled via data)
+        let data: Vec<(f64, f64)> = curve_data
+            .iter()
+            .map(|(freq, db)| (freq.log10(), *db))
+            .collect();
+
+        // Find min/max for y-axis bounds
+        let max_db = curve_data
+            .iter()
+            .map(|(_, db)| db)
+            .fold(f64::NEG_INFINITY, |a, &b| a.max(b))
+            .max(1.0);
+        let min_db = curve_data
+            .iter()
+            .map(|(_, db)| db)
+            .fold(f64::INFINITY, |a, &b| a.min(b))
+            .min(-1.0);
+
+        let dataset = Dataset::default()
+            .name("EQ Response")
+            .marker(ratatui::symbols::Marker::Braille)
+            .graph_type(GraphType::Line)
+            .style(Style::default().fg(Color::Cyan))
+            .data(&data);
+
+        // X-axis: log scale from 20 Hz to 20 kHz
+        let x_axis = Axis::default()
+            .title("Frequency (Hz)")
+            .style(Style::default().fg(Color::Gray))
+            .bounds([20_f64.log10(), 20000_f64.log10()])
+            .labels(vec!["20", "100", "1k", "10k", "20k"]);
+
+        // Y-axis: dB scale
+        let y_axis = Axis::default()
+            .title("Gain (dB)")
+            .style(Style::default().fg(Color::Gray))
+            .bounds([min_db - 1.0, max_db + 1.0])
+            .labels(vec![
+                format!("{:.1}", min_db),
+                "0".into(),
+                format!("{:.1}", max_db),
+            ]);
+
+        let chart = Chart::new(vec![dataset])
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .title("Frequency Response"),
+            )
+            .x_axis(x_axis)
+            .y_axis(y_axis);
+
+        f.render_widget(chart, area);
     }
 }
 
