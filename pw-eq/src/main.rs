@@ -43,6 +43,8 @@ struct Create {
 struct Describe {
     /// EQ name or ID
     profile: String,
+    #[arg(short, long)]
+    all: bool,
 }
 
 #[derive(Parser)]
@@ -123,7 +125,7 @@ async fn main() -> anyhow::Result<()> {
             let table = Table::new(eqs);
             println!("{table}");
         }
-        Cmd::Describe(describe) => describe_eq(&describe.profile).await?,
+        Cmd::Describe(describe) => describe_eq(&describe).await?,
         Cmd::Set(set) => set_band(set).await?,
         Cmd::Use(use_cmd) => {
             use_eq(&use_cmd.profile).await?;
@@ -211,7 +213,7 @@ async fn set_band(
     Ok(())
 }
 
-async fn describe_eq(profile: &str) -> anyhow::Result<()> {
+async fn describe_eq(Describe { all, profile }: &Describe) -> anyhow::Result<()> {
     let node = find_eq_node(profile).await?;
     let info = node.info;
 
@@ -220,6 +222,12 @@ async fn describe_eq(profile: &str) -> anyhow::Result<()> {
         freq: Option<f64>,
         gain: Option<f64>,
         q: Option<f64>,
+        a0: Option<f64>,
+        a1: Option<f64>,
+        a2: Option<f64>,
+        b0: Option<f64>,
+        b1: Option<f64>,
+        b2: Option<f64>,
     }
 
     let mut band_info = BTreeMap::<usize, BandInfo>::new();
@@ -245,7 +253,12 @@ async fn describe_eq(profile: &str) -> anyhow::Result<()> {
                 "Freq" => band_info.freq = Some(value),
                 "Gain" => band_info.gain = Some(value),
                 "Q" => band_info.q = Some(value),
-                "a0" | "a1" | "a2" | "b0" | "b1" | "b2" => {}
+                "a0" => band_info.a0 = Some(value),
+                "a1" => band_info.a1 = Some(value),
+                "a2" => band_info.a2 = Some(value),
+                "b0" => band_info.b0 = Some(value),
+                "b1" => band_info.b1 = Some(value),
+                "b2" => band_info.b2 = Some(value),
                 _ => anyhow::bail!("Unknown EQ band parameter: {param_name}"),
             }
         }
@@ -269,10 +282,19 @@ async fn describe_eq(profile: &str) -> anyhow::Result<()> {
             .q
             .ok_or_else(|| anyhow::anyhow!("Missing Q for band {idx}"))?;
 
-        println!(
-            "  Band {:>2}: Freq {:>8.2} Hz  Gain {:+5.2} dB  Q {:.2}",
-            idx, freq, gain, q
-        );
+        if *all {
+            println!(
+                "  Band {idx:>2}: Freq {freq:>8.2} Hz  Gain {gain:+5.2} dB  Q {q:.2} --> ({:.6}, {:.6}, {:.6}, {:.6}, {:.6}, {:.6})",
+                band.b0.unwrap_or(0.0),
+                band.b1.unwrap_or(0.0),
+                band.b2.unwrap_or(0.0),
+                band.a0.unwrap_or(0.0),
+                band.a1.unwrap_or(0.0),
+                band.a2.unwrap_or(0.0),
+            );
+        } else {
+            println!("  Band {idx:>2}: Freq {freq:>8.2} Hz  Gain {gain:+5.2} dB  Q {q:.2}",);
+        }
     }
 
     Ok(())
