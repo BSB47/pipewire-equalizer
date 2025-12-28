@@ -14,7 +14,8 @@ use ratatui::{
     Terminal,
     prelude::{Backend, Constraint, CrosstermBackend, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
-    widgets::{Axis, Block, Borders, Chart, Dataset, GraphType, Paragraph, Row, Table},
+    symbols::Marker,
+    widgets::{Axis, Block, Borders, Cell, Chart, Dataset, GraphType, Paragraph, Row, Table},
 };
 use tokio::sync::mpsc;
 
@@ -529,44 +530,88 @@ where
             .iter()
             .enumerate()
             .map(|(idx, band)| {
-                let freq_str = if band.frequency >= 1000.0 {
+                // Format frequency with better precision
+                let freq_str = if band.frequency >= 10000.0 {
                     format!("{:.1}k", band.frequency / 1000.0)
+                } else if band.frequency >= 1000.0 {
+                    format!("{:.2}k", band.frequency / 1000.0)
                 } else {
                     format!("{:.0}", band.frequency)
                 };
-                let style = if idx == eq_state.selected_band {
-                    Style::default()
-                        .fg(Color::Yellow)
-                        .add_modifier(Modifier::BOLD)
+
+                // Color-code the gain value
+                let gain_color = if band.gain > 0.05 {
+                    Color::Green
+                } else if band.gain < -0.05 {
+                    Color::Red
                 } else {
-                    Style::default()
+                    Color::Gray
                 };
 
-                Row::new(vec![
-                    format!("{}", idx + 1),
-                    freq_str,
-                    format!("{:+.1}", band.gain),
-                    format!("{:.2}", band.q),
-                ])
-                .style(style)
+                let is_selected = idx == eq_state.selected_band;
+
+                // Create cells with individual styling
+                let cells = vec![
+                    Cell::from(format!("{}", idx + 1)).style(if is_selected {
+                        Style::default()
+                            .fg(Color::Yellow)
+                            .add_modifier(Modifier::BOLD)
+                    } else {
+                        Style::default().fg(Color::DarkGray)
+                    }),
+                    Cell::from(freq_str).style(if is_selected {
+                        Style::default()
+                            .fg(Color::Cyan)
+                            .add_modifier(Modifier::BOLD)
+                    } else {
+                        Style::default().fg(Color::White)
+                    }),
+                    Cell::from(format!("{:+.1}", band.gain)).style(if is_selected {
+                        Style::default().fg(gain_color).add_modifier(Modifier::BOLD)
+                    } else {
+                        Style::default().fg(gain_color)
+                    }),
+                    Cell::from(format!("{:.2}", band.q)).style(if is_selected {
+                        Style::default()
+                            .fg(Color::Magenta)
+                            .add_modifier(Modifier::BOLD)
+                    } else {
+                        Style::default().fg(Color::White)
+                    }),
+                ];
+
+                Row::new(cells)
             })
             .collect();
 
         let table = Table::new(
             rows,
             [
-                Constraint::Length(5),
-                Constraint::Length(10),
-                Constraint::Length(10),
-                Constraint::Length(10),
+                Constraint::Length(3), // #
+                Constraint::Length(8), // Freq
+                Constraint::Length(9), // Gain (dB)
+                Constraint::Length(6), // Q
             ],
         )
         .header(
-            Row::new(vec!["#", "Freq (Hz)", "Gain (dB)", "Q"])
-                .style(Style::default().add_modifier(Modifier::BOLD))
+            Row::new(vec!["#", "Freq", "Gain", "Q"])
+                .style(
+                    Style::default()
+                        .fg(Color::White)
+                        .add_modifier(Modifier::BOLD | Modifier::UNDERLINED),
+                )
                 .bottom_margin(1),
         )
-        .block(Block::default().borders(Borders::ALL).title("Bands"));
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title("EQ Bands")
+                .title_style(
+                    Style::default()
+                        .fg(Color::Cyan)
+                        .add_modifier(Modifier::BOLD),
+                ),
+        );
 
         f.render_widget(table, area);
     }
@@ -594,6 +639,7 @@ where
             .map(|(_, db)| db)
             .fold(f64::NEG_INFINITY, |a, &b| a.max(b))
             .max(1.0);
+
         let min_db = curve_data
             .iter()
             .map(|(_, db)| db)
@@ -602,17 +648,20 @@ where
 
         let dataset = Dataset::default()
             .name("EQ Response")
-            .marker(ratatui::symbols::Marker::Braille)
+            .marker(Marker::Braille)
             .graph_type(GraphType::Line)
             .style(Style::default().fg(Color::Cyan))
             .data(&data);
 
         // X-axis: log scale from 20 Hz to 20 kHz
+        let log_min = 20_f64.log10();
+        let log_max = 20000_f64.log10();
+
         let x_axis = Axis::default()
-            .title("Frequency (Hz)")
+            .title("Frequency")
             .style(Style::default().fg(Color::Gray))
-            .bounds([20_f64.log10(), 20000_f64.log10()])
-            .labels(vec!["20", "100", "1k", "10k", "20k"]);
+            .bounds([log_min, log_max])
+            .labels(vec!["20Hz".to_string(), "20kHz".to_string()]);
 
         // Y-axis: dB scale
         let y_axis = Axis::default()
