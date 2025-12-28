@@ -20,7 +20,7 @@ use tokio::sync::mpsc;
 use crate::pw::{self, pw_thread};
 
 // EQ Band state
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 struct Band {
     frequency: f64,
     gain: f64,
@@ -305,6 +305,10 @@ where
 
     fn handle_key(&mut self, key: KeyEvent) -> io::Result<ControlFlow<()>> {
         tracing::debug!(key = ?key, "key event");
+
+        let before_idx = self.eq_state.selected_band;
+        let before_band = self.eq_state.bands[self.eq_state.selected_band];
+
         match key.code {
             // Quit
             KeyCode::Esc | KeyCode::Char('q') => return Ok(ControlFlow::Break(())),
@@ -352,9 +356,10 @@ where
             _ => {}
         }
 
-        // TODO only run this if there are state changes
-        // Also debounce a bit
-        if let Some(node_id) = self.active_node_id {
+        if let Some(node_id) = self.active_node_id
+            && self.eq_state.selected_band == before_idx
+            && self.eq_state.bands[self.eq_state.selected_band] != before_band
+        {
             let band_idx = NonZero::new(self.eq_state.selected_band + 1).unwrap();
             let band = &self.eq_state.bands[self.eq_state.selected_band];
             let update = pw_eq::UpdateBand {
