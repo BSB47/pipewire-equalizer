@@ -9,7 +9,7 @@ use crossterm::{
     terminal::{self, EnterAlternateScreen},
 };
 use futures_util::{Stream, StreamExt as _};
-use pw_util::{config::ModuleArgs, pipewire};
+use pw_util::{apo::FilterType, config::ModuleArgs, pipewire};
 use ratatui::{
     Terminal,
     prelude::{Backend, Constraint, CrosstermBackend, Direction, Layout, Rect},
@@ -23,25 +23,27 @@ use crate::pw::{self, pw_thread};
 
 // EQ Band state
 #[derive(Debug, Clone, Copy, PartialEq)]
-struct Band {
+struct Filter {
     frequency: f64,
     gain: f64,
     q: f64,
+    filter_type: FilterType,
 }
 
-impl Default for Band {
+impl Default for Filter {
     fn default() -> Self {
         Self {
             frequency: 1000.0,
             gain: 0.0,
             q: 1.0,
+            filter_type: FilterType::Peaking,
         }
     }
 }
 
-impl Band {
-    /// Calculate biquad coefficients for peaking filter
-    /// Returns (b0, b1, b2, a0, a1, a2)
+impl Filter {
+    /// Calculate biquad coefficients based on filter type
+    /// Returns normalized (b0, b1, b2, a0, a1, a2) where a0 = 1.0
     fn biquad_coeffs(&self, sample_rate: f64) -> (f64, f64, f64, f64, f64, f64) {
         use std::f64::consts::PI;
 
@@ -51,14 +53,40 @@ impl Band {
         let alpha = sin_w0 / (2.0 * self.q);
         let a = 10_f64.powf(self.gain / 40.0); // dB to amplitude
 
-        let b0 = 1.0 + alpha * a;
-        let b1 = -2.0 * cos_w0;
-        let b2 = 1.0 - alpha * a;
-        let a0 = 1.0 + alpha / a;
-        let a1 = -2.0 * cos_w0;
-        let a2 = 1.0 - alpha / a;
+        let (b0, b1, b2, a0, a1, a2) = match self.filter_type {
+            FilterType::Peaking => {
+                let b0 = 1.0 + alpha * a;
+                let b1 = -2.0 * cos_w0;
+                let b2 = 1.0 - alpha * a;
+                let a0 = 1.0 + alpha / a;
+                let a1 = -2.0 * cos_w0;
+                let a2 = 1.0 - alpha / a;
+                (b0, b1, b2, a0, a1, a2)
+            }
+            FilterType::LowShelf => {
+                let sqrt_a = a.sqrt();
+                let b0 = a * ((a + 1.0) - (a - 1.0) * cos_w0 + 2.0 * sqrt_a * alpha);
+                let b1 = 2.0 * a * ((a - 1.0) - (a + 1.0) * cos_w0);
+                let b2 = a * ((a + 1.0) - (a - 1.0) * cos_w0 - 2.0 * sqrt_a * alpha);
+                let a0 = (a + 1.0) + (a - 1.0) * cos_w0 + 2.0 * sqrt_a * alpha;
+                let a1 = -2.0 * ((a - 1.0) + (a + 1.0) * cos_w0);
+                let a2 = (a + 1.0) + (a - 1.0) * cos_w0 - 2.0 * sqrt_a * alpha;
+                (b0, b1, b2, a0, a1, a2)
+            }
+            FilterType::HighShelf => {
+                let sqrt_a = a.sqrt();
+                let b0 = a * ((a + 1.0) + (a - 1.0) * cos_w0 + 2.0 * sqrt_a * alpha);
+                let b1 = -2.0 * a * ((a - 1.0) + (a + 1.0) * cos_w0);
+                let b2 = a * ((a + 1.0) + (a - 1.0) * cos_w0 - 2.0 * sqrt_a * alpha);
+                let a0 = (a + 1.0) - (a - 1.0) * cos_w0 + 2.0 * sqrt_a * alpha;
+                let a1 = 2.0 * ((a - 1.0) - (a + 1.0) * cos_w0);
+                let a2 = (a + 1.0) - (a - 1.0) * cos_w0 - 2.0 * sqrt_a * alpha;
+                (b0, b1, b2, a0, a1, a2)
+            }
+        };
 
-        (b0, b1, b2, a0, a1, a2)
+        // Normalize by dividing all coefficients by a0
+        (b0 / a0, b1 / a0, b2 / a0, 1.0, a1 / a0, a2 / a0)
     }
 
     /// Calculate magnitude response in dB at a given frequency
@@ -86,7 +114,7 @@ impl Band {
 // EQ state
 struct EqState {
     name: String,
-    bands: Vec<Band>,
+    bands: Vec<Filter>,
     selected_band: usize,
     max_bands: usize,
 }
@@ -96,40 +124,47 @@ impl EqState {
         Self {
             name,
             bands: vec![
-                Band {
+                Filter {
                     frequency: 50.0,
                     gain: 0.0,
                     q: 1.0,
+                    filter_type: FilterType::LowShelf,
                 },
-                Band {
+                Filter {
                     frequency: 100.0,
                     gain: 0.0,
                     q: 1.0,
+                    filter_type: FilterType::Peaking,
                 },
-                Band {
+                Filter {
                     frequency: 200.0,
                     gain: 0.0,
                     q: 1.0,
+                    filter_type: FilterType::Peaking,
                 },
-                Band {
+                Filter {
                     frequency: 500.0,
                     gain: 0.0,
                     q: 1.0,
+                    filter_type: FilterType::Peaking,
                 },
-                Band {
+                Filter {
                     frequency: 2000.0,
                     gain: 0.0,
                     q: 1.0,
+                    filter_type: FilterType::Peaking,
                 },
-                Band {
+                Filter {
                     frequency: 5000.0,
                     gain: 0.0,
                     q: 1.0,
+                    filter_type: FilterType::Peaking,
                 },
-                Band {
+                Filter {
                     frequency: 10000.0,
                     gain: 0.0,
                     q: 1.0,
+                    filter_type: FilterType::HighShelf,
                 },
             ],
             selected_band: 0,
@@ -154,10 +189,11 @@ impl EqState {
             (current_band.frequency * 20000.0).sqrt().min(20000.0)
         };
 
-        let new_band = Band {
+        let new_band = Filter {
             frequency: new_freq,
             gain: 0.0,
-            q: current_band.q, // Copy Q from current band
+            q: 1.0,
+            filter_type: FilterType::Peaking,
         };
 
         self.bands.insert(self.selected_band + 1, new_band);
@@ -201,6 +237,16 @@ impl EqState {
         }
     }
 
+    fn cycle_filter_type(&mut self) {
+        if let Some(band) = self.bands.get_mut(self.selected_band) {
+            band.filter_type = match band.filter_type {
+                FilterType::Peaking => FilterType::LowShelf,
+                FilterType::LowShelf => FilterType::HighShelf,
+                FilterType::HighShelf => FilterType::Peaking,
+            };
+        }
+    }
+
     fn to_apo_config(&self) -> pw_util::apo::Config {
         let filters = self
             .bands
@@ -209,7 +255,7 @@ impl EqState {
             .map(|(idx, band)| pw_util::apo::Filter {
                 number: (idx + 1) as u32,
                 enabled: true,
-                filter_type: pw_util::apo::FilterType::Peaking,
+                filter_type: band.filter_type,
                 freq: band.frequency as f32,
                 gain: band.gain as f32,
                 q: band.q as f32,
@@ -443,6 +489,9 @@ where
             KeyCode::Char('q') => self.eq_state.adjust_q(0.1),
             KeyCode::Char('Q') => self.eq_state.adjust_q(-0.1),
 
+            // Filter type
+            KeyCode::Char('t') => self.eq_state.cycle_filter_type(),
+
             // Band management
             KeyCode::Char('a') => self.eq_state.add_band(),
             KeyCode::Char('d') => self.eq_state.delete_selected_band(),
@@ -470,14 +519,28 @@ where
         {
             let band_idx = NonZero::new(self.eq_state.selected_band + 1).unwrap();
             let band = &self.eq_state.bands[self.eq_state.selected_band];
-            let update = pw_eq::UpdateBand {
-                frequency: Some(band.frequency),
-                gain: Some(band.gain),
-                q: Some(band.q),
+
+            // If filter type changed, we need to update coefficients directly
+            let update = if before_band.filter_type != band.filter_type {
+                let (b0, b1, b2, a0, a1, a2) = band.biquad_coeffs(self.sample_rate);
+                pw_eq::UpdateFilter::Coeffs {
+                    b0,
+                    b1,
+                    b2,
+                    a0,
+                    a1,
+                    a2,
+                }
+            } else {
+                pw_eq::UpdateFilter::Params {
+                    frequency: Some(band.frequency),
+                    gain: Some(band.gain),
+                    q: Some(band.q),
+                }
             };
 
             tokio::spawn(async move {
-                if let Err(err) = pw_eq::update_band(node_id, band_idx, update).await {
+                if let Err(err) = pw_eq::update_filter(node_id, band_idx, update).await {
                     tracing::error!(error = %err, "failed to update band");
                 }
             });
@@ -519,7 +582,7 @@ where
 
             // Footer/Help
             let help = Paragraph::new(
-                "Tab/Shift-Tab/j/k: select | f/F: freq | g/G: gain | q/Q: Q | a: add | d: delete | 0: zero gain | Esc/q: quit"
+                "Tab/j/k: select | t: type | f/F: freq | g/G: gain | q/Q: Q | a: add | d: delete | 0: zero | Esc/C-c: quit"
             )
             .block(Block::default().borders(Borders::ALL));
             f.render_widget(help, chunks[3]);
@@ -542,6 +605,13 @@ where
                     format!("{:.0}", band.frequency)
                 };
 
+                // Format filter type
+                let type_str = match band.filter_type {
+                    FilterType::Peaking => "PK",
+                    FilterType::LowShelf => "LS",
+                    FilterType::HighShelf => "HS",
+                };
+
                 // Color-code the gain value
                 let gain_color = if band.gain > 0.05 {
                     Color::Green
@@ -561,6 +631,13 @@ where
                             .add_modifier(Modifier::BOLD)
                     } else {
                         Style::default().fg(Color::DarkGray)
+                    }),
+                    Cell::from(type_str).style(if is_selected {
+                        Style::default()
+                            .fg(Color::Blue)
+                            .add_modifier(Modifier::BOLD)
+                    } else {
+                        Style::default().fg(Color::Gray)
                     }),
                     Cell::from(freq_str).style(if is_selected {
                         Style::default()
@@ -591,13 +668,14 @@ where
             rows,
             [
                 Constraint::Length(3), // #
+                Constraint::Length(4), // Type
                 Constraint::Length(8), // Freq
                 Constraint::Length(9), // Gain (dB)
                 Constraint::Length(6), // Q
             ],
         )
         .header(
-            Row::new(vec!["#", "Freq", "Gain", "Q"])
+            Row::new(vec!["#", "Type", "Freq", "Gain", "Q"])
                 .style(
                     Style::default()
                         .fg(Color::White)

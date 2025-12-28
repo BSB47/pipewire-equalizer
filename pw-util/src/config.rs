@@ -4,7 +4,7 @@ use std::fmt;
 // Property to mark nodes as managed by pw-eq
 // Ensure this matches the field name in CaptureProps
 pub const MANAGED_PROP: &str = "pweq.managed";
-pub const BAND_PREFIX: &str = "pweq.band";
+pub const FILTER_PREFIX: &str = "pweq.filter";
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Config {
@@ -33,7 +33,7 @@ impl Module {
             .iter()
             .map(|filter| Node {
                 node_type: NodeType::Builtin,
-                name: format!("{BAND_PREFIX}{}", filter.number),
+                name: format!("{FILTER_PREFIX}{}", filter.number),
                 filter: filter.filter_type.into(),
                 control: Control {
                     freq: filter.freq,
@@ -48,8 +48,8 @@ impl Module {
                 let curr = &apo.filters[i];
                 let next = &apo.filters[i + 1];
                 Link {
-                    output: format!("{BAND_PREFIX}{}:Out", curr.number),
-                    input: format!("{BAND_PREFIX}{}:In", next.number),
+                    output: format!("{FILTER_PREFIX}{}:Out", curr.number),
+                    input: format!("{FILTER_PREFIX}{}:In", next.number),
                 }
             })
             .collect();

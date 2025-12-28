@@ -1,7 +1,7 @@
 use std::num::NonZero;
 
 use anyhow::Context;
-use pw_util::config::{BAND_PREFIX, MANAGED_PROP};
+use pw_util::config::{FILTER_PREFIX, MANAGED_PROP};
 use tabled::Tabled;
 use tokio::process::Command;
 
@@ -75,33 +75,61 @@ pub async fn use_eq(profile: &str) -> anyhow::Result<u32> {
 }
 
 #[derive(Debug, Clone)]
-pub struct UpdateBand {
-    pub frequency: Option<f64>,
-    pub gain: Option<f64>,
-    pub q: Option<f64>,
+pub enum UpdateFilter {
+    Params {
+        frequency: Option<f64>,
+        gain: Option<f64>,
+        q: Option<f64>,
+    },
+    Coeffs {
+        b0: f64,
+        b1: f64,
+        b2: f64,
+        a0: f64,
+        a1: f64,
+        a2: f64,
+    },
 }
 
-pub async fn update_band(
+pub async fn update_filter(
     node_id: u32,
     band_idx: NonZero<usize>,
-    UpdateBand { frequency, gain, q }: UpdateBand,
+    update: UpdateFilter,
 ) -> anyhow::Result<()> {
     // Build the params array for pw-cli
     let mut params = Vec::new();
 
-    if let Some(freq) = frequency {
-        params.push(format!(r#""{BAND_PREFIX}{band_idx}:Freq""#));
-        params.push(freq.to_string());
-    }
+    match update {
+        UpdateFilter::Params { frequency, gain, q } => {
+            if let Some(freq) = frequency {
+                params.push(format!(r#""{FILTER_PREFIX}{band_idx}:Freq""#));
+                params.push(freq.to_string());
+            }
 
-    if let Some(gain_val) = gain {
-        params.push(format!(r#""{BAND_PREFIX}{band_idx}:Gain""#));
-        params.push(gain_val.to_string());
-    }
+            if let Some(gain_val) = gain {
+                params.push(format!(r#""{FILTER_PREFIX}{band_idx}:Gain""#));
+                params.push(gain_val.to_string());
+            }
 
-    if let Some(q_val) = q {
-        params.push(format!(r#""{BAND_PREFIX}{band_idx}:Q""#));
-        params.push(q_val.to_string());
+            if let Some(q_val) = q {
+                params.push(format!(r#""{FILTER_PREFIX}{band_idx}:Q""#));
+                params.push(q_val.to_string());
+            }
+        }
+        UpdateFilter::Coeffs { b0, b1, b2, a0, a1, a2 } => {
+            params.push(format!(r#""{FILTER_PREFIX}{band_idx}:b0""#));
+            params.push(b0.to_string());
+            params.push(format!(r#""{FILTER_PREFIX}{band_idx}:b1""#));
+            params.push(b1.to_string());
+            params.push(format!(r#""{FILTER_PREFIX}{band_idx}:b2""#));
+            params.push(b2.to_string());
+            params.push(format!(r#""{FILTER_PREFIX}{band_idx}:a0""#));
+            params.push(a0.to_string());
+            params.push(format!(r#""{FILTER_PREFIX}{band_idx}:a1""#));
+            params.push(a1.to_string());
+            params.push(format!(r#""{FILTER_PREFIX}{band_idx}:a2""#));
+            params.push(a2.to_string());
+        }
     }
 
     let output = Command::new("pw-cli")

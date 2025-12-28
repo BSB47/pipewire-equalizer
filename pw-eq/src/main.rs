@@ -4,7 +4,7 @@ mod tui;
 use anyhow::Context as _;
 use clap::Parser;
 use pw_eq::{find_eq_node, use_eq};
-use pw_util::config::BAND_PREFIX;
+use pw_util::config::FILTER_PREFIX;
 use std::collections::BTreeMap;
 use std::fs::File;
 use std::num::NonZero;
@@ -194,7 +194,7 @@ async fn set_band(
 
     let node = find_eq_node(&profile).await?;
 
-    pw_eq::update_band(node.id, band, pw_eq::UpdateBand { frequency, gain, q }).await?;
+    pw_eq::update_filter(node.id, band, pw_eq::UpdateFilter::Params { frequency, gain, q }).await?;
 
     println!(
         "Updated band {} on EQ '{}' (node {})",
@@ -220,7 +220,7 @@ async fn describe_eq(profile: &str) -> anyhow::Result<()> {
     for prop in info.params.props {
         for (key, value) in &prop.params.0 {
             let Some((idx, param_name)) = key
-                .strip_prefix(BAND_PREFIX)
+                .strip_prefix(FILTER_PREFIX)
                 .and_then(|s| s.split_once(':'))
             else {
                 continue;
