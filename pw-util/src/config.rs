@@ -142,6 +142,7 @@ pub struct FilterGraph {
     pub links: Vec<Link>,
 }
 
+// Make this an enum of bq_raw and param_eq
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Node {
     #[serde(rename = "type")]
