@@ -1,6 +1,3 @@
-mod pw;
-mod tui;
-
 use anyhow::Context as _;
 use clap::Parser;
 use pw_eq::{find_eq_node, use_eq};
@@ -131,7 +128,7 @@ async fn main() -> anyhow::Result<()> {
         Cmd::Use(use_cmd) => {
             use_eq(&use_cmd.profile).await?;
         }
-        Cmd::Tui => tui::run().await?,
+        Cmd::Tui => pw_eq::tui::run().await?,
     }
 
     Ok(())
@@ -194,7 +191,12 @@ async fn set_band(
 
     let node = find_eq_node(&profile).await?;
 
-    pw_eq::update_filter(node.id, band, pw_eq::UpdateFilter::Params { frequency, gain, q }).await?;
+    pw_eq::update_filter(
+        node.id,
+        band,
+        pw_eq::UpdateFilter::Params { frequency, gain, q },
+    )
+    .await?;
 
     println!(
         "Updated band {} on EQ '{}' (node {})",

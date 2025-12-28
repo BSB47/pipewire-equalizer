@@ -1,3 +1,4 @@
+use crate::{UpdateFilter, filter::Filter, update_filter, use_eq};
 use std::{
     backtrace::Backtrace, error::Error, io, num::NonZero, ops::ControlFlow, pin::pin,
     sync::mpsc::Receiver,
@@ -20,96 +21,6 @@ use ratatui::{
 use tokio::sync::mpsc;
 
 use crate::pw::{self, pw_thread};
-
-// EQ Band state
-#[derive(Debug, Clone, Copy, PartialEq)]
-struct Filter {
-    frequency: f64,
-    gain: f64,
-    q: f64,
-    filter_type: FilterType,
-}
-
-impl Default for Filter {
-    fn default() -> Self {
-        Self {
-            frequency: 1000.0,
-            gain: 0.0,
-            q: 1.0,
-            filter_type: FilterType::Peaking,
-        }
-    }
-}
-
-impl Filter {
-    /// Calculate biquad coefficients based on filter type
-    /// Returns normalized (b0, b1, b2, a0, a1, a2) where a0 = 1.0
-    fn biquad_coeffs(&self, sample_rate: f64) -> (f64, f64, f64, f64, f64, f64) {
-        use std::f64::consts::PI;
-
-        let w0 = 2.0 * PI * self.frequency / sample_rate;
-        let cos_w0 = w0.cos();
-        let sin_w0 = w0.sin();
-        let alpha = sin_w0 / (2.0 * self.q);
-        let a = 10_f64.powf(self.gain / 40.0); // dB to amplitude
-
-        let (b0, b1, b2, a0, a1, a2) = match self.filter_type {
-            FilterType::Peaking => {
-                let b0 = 1.0 + alpha * a;
-                let b1 = -2.0 * cos_w0;
-                let b2 = 1.0 - alpha * a;
-                let a0 = 1.0 + alpha / a;
-                let a1 = -2.0 * cos_w0;
-                let a2 = 1.0 - alpha / a;
-                (b0, b1, b2, a0, a1, a2)
-            }
-            FilterType::LowShelf => {
-                let sqrt_a = a.sqrt();
-                let b0 = a * ((a + 1.0) - (a - 1.0) * cos_w0 + 2.0 * sqrt_a * alpha);
-                let b1 = 2.0 * a * ((a - 1.0) - (a + 1.0) * cos_w0);
-                let b2 = a * ((a + 1.0) - (a - 1.0) * cos_w0 - 2.0 * sqrt_a * alpha);
-                let a0 = (a + 1.0) + (a - 1.0) * cos_w0 + 2.0 * sqrt_a * alpha;
-                let a1 = -2.0 * ((a - 1.0) + (a + 1.0) * cos_w0);
-                let a2 = (a + 1.0) + (a - 1.0) * cos_w0 - 2.0 * sqrt_a * alpha;
-                (b0, b1, b2, a0, a1, a2)
-            }
-            FilterType::HighShelf => {
-                let sqrt_a = a.sqrt();
-                let b0 = a * ((a + 1.0) + (a - 1.0) * cos_w0 + 2.0 * sqrt_a * alpha);
-                let b1 = -2.0 * a * ((a - 1.0) + (a + 1.0) * cos_w0);
-                let b2 = a * ((a + 1.0) + (a - 1.0) * cos_w0 - 2.0 * sqrt_a * alpha);
-                let a0 = (a + 1.0) - (a - 1.0) * cos_w0 + 2.0 * sqrt_a * alpha;
-                let a1 = 2.0 * ((a - 1.0) - (a + 1.0) * cos_w0);
-                let a2 = (a + 1.0) - (a - 1.0) * cos_w0 - 2.0 * sqrt_a * alpha;
-                (b0, b1, b2, a0, a1, a2)
-            }
-        };
-
-        // Normalize by dividing all coefficients by a0
-        (b0 / a0, b1 / a0, b2 / a0, 1.0, a1 / a0, a2 / a0)
-    }
-
-    /// Calculate magnitude response in dB at a given frequency
-    fn magnitude_db_at(&self, freq: f64, sample_rate: f64) -> f64 {
-        use std::f64::consts::PI;
-
-        let (b0, b1, b2, a0, a1, a2) = self.biquad_coeffs(sample_rate);
-        let w = 2.0 * PI * freq / sample_rate;
-
-        // Numerator (zeros)
-        let re_num = b0 + b1 * w.cos() + b2 * (2.0 * w).cos();
-        let im_num = b1 * w.sin() + b2 * (2.0 * w).sin();
-
-        // Denominator (poles)
-        let re_den = a0 + a1 * w.cos() + a2 * (2.0 * w).cos();
-        let im_den = a1 * w.sin() + a2 * (2.0 * w).sin();
-
-        let mag_num = (re_num * re_num + im_num * im_num).sqrt();
-        let mag_den = (re_den * re_den + im_den * im_den).sqrt();
-
-        20.0 * (mag_num / mag_den).log10()
-    }
-}
 
 // EQ state
 struct EqState {
@@ -433,7 +344,7 @@ where
                 media_name,
             } => {
                 tracing::info!(id, name, media_name, "module loaded");
-                let Ok(node_id) = pw_eq::use_eq(&media_name).await.inspect_err(|err| {
+                let Ok(node_id) = use_eq(&media_name).await.inspect_err(|err| {
                     tracing::error!(error = %err, "failed to use EQ");
                 }) else {
                     return;
@@ -523,7 +434,7 @@ where
             // If filter type changed, we need to update coefficients directly
             let update = if before_band.filter_type != band.filter_type {
                 let (b0, b1, b2, a0, a1, a2) = band.biquad_coeffs(self.sample_rate);
-                pw_eq::UpdateFilter::Coeffs {
+                UpdateFilter::Coeffs {
                     b0,
                     b1,
                     b2,
@@ -532,7 +443,7 @@ where
                     a2,
                 }
             } else {
-                pw_eq::UpdateFilter::Params {
+                UpdateFilter::Params {
                     frequency: Some(band.frequency),
                     gain: Some(band.gain),
                     q: Some(band.q),
@@ -540,7 +451,7 @@ where
             };
 
             tokio::spawn(async move {
-                if let Err(err) = pw_eq::update_filter(node_id, band_idx, update).await {
+                if let Err(err) = update_filter(node_id, band_idx, update).await {
                     tracing::error!(error = %err, "failed to update band");
                 }
             });

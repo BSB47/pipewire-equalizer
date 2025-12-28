@@ -295,7 +295,7 @@ mod tests {
                                 nodes = [
                                     {
                                         type = "builtin"
-                                        name = "pweq.band1"
+                                        name = "pweq.filter1"
                                         label = "bq_peaking"
                                         control = {
                                             Freq = 46.0
@@ -305,7 +305,7 @@ mod tests {
                                     }
                                     {
                                         type = "builtin"
-                                        name = "pweq.band2"
+                                        name = "pweq.filter2"
                                         label = "bq_lowshelf"
                                         control = {
                                             Freq = 105.0
@@ -316,8 +316,8 @@ mod tests {
                                 ]
                                 links = [
                                     {
-                                        output = "pweq.band1:Out"
-                                        input = "pweq.band2:In"
+                                        output = "pweq.filter1:Out"
+                                        input = "pweq.filter2:In"
                                     }
                                 ]
                             }

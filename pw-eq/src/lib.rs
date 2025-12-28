@@ -1,3 +1,7 @@
+mod filter;
+mod pw;
+pub mod tui;
+
 use std::num::NonZero;
 
 use anyhow::Context;
@@ -116,7 +120,14 @@ pub async fn update_filter(
                 params.push(q_val.to_string());
             }
         }
-        UpdateFilter::Coeffs { b0, b1, b2, a0, a1, a2 } => {
+        UpdateFilter::Coeffs {
+            b0,
+            b1,
+            b2,
+            a0,
+            a1,
+            a2,
+        } => {
             params.push(format!(r#""{FILTER_PREFIX}{band_idx}:b0""#));
             params.push(b0.to_string());
             params.push(format!(r#""{FILTER_PREFIX}{band_idx}:b1""#));
