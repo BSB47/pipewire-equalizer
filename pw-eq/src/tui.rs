@@ -130,21 +130,21 @@ impl EqState {
         self.selected_band = self.selected_band.saturating_sub(1);
     }
 
-    fn adjust_freq(&mut self, delta: f64) {
+    fn adjust_freq(&mut self, f: impl FnOnce(f64) -> f64) {
         if let Some(band) = self.bands.get_mut(self.selected_band) {
-            band.frequency = (band.frequency + delta).clamp(20.0, 20000.0);
+            band.frequency = f(band.frequency).clamp(20.0, 20000.0);
         }
     }
 
-    fn adjust_gain(&mut self, delta: f64) {
+    fn adjust_gain(&mut self, f: impl FnOnce(f64) -> f64) {
         if let Some(band) = self.bands.get_mut(self.selected_band) {
-            band.gain = (band.gain + delta).clamp(-12.0, 12.0);
+            band.gain = f(band.gain).clamp(-12.0, 12.0);
         }
     }
 
-    fn adjust_q(&mut self, delta: f64) {
+    fn adjust_q(&mut self, f: impl FnOnce(f64) -> f64) {
         if let Some(band) = self.bands.get_mut(self.selected_band) {
-            band.q = (band.q + delta).clamp(0.1, 10.0);
+            band.q = f(band.q).clamp(0.1, 10.0);
         }
     }
 
@@ -389,16 +389,16 @@ where
             }
 
             // Frequency adjustment
-            KeyCode::Char('f') => self.eq_state.adjust_freq(1.0),
-            KeyCode::Char('F') => self.eq_state.adjust_freq(-1.0),
+            KeyCode::Char('f') => self.eq_state.adjust_freq(|f| f * 1.025),
+            KeyCode::Char('F') => self.eq_state.adjust_freq(|f| f / 1.025),
 
             // Gain adjustment
-            KeyCode::Char('g') => self.eq_state.adjust_gain(0.1),
-            KeyCode::Char('G') => self.eq_state.adjust_gain(-0.1),
+            KeyCode::Char('g') => self.eq_state.adjust_gain(|g| g + 0.1),
+            KeyCode::Char('G') => self.eq_state.adjust_gain(|g| g - 0.1),
 
             // Q adjustment
-            KeyCode::Char('q') => self.eq_state.adjust_q(0.1),
-            KeyCode::Char('Q') => self.eq_state.adjust_q(-0.1),
+            KeyCode::Char('q') => self.eq_state.adjust_q(|q| q + 0.01),
+            KeyCode::Char('Q') => self.eq_state.adjust_q(|q| q - 0.01),
 
             // Filter type
             KeyCode::Char('t') => self.eq_state.cycle_filter_type(),
