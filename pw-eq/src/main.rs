@@ -3,7 +3,7 @@ use clap::Parser;
 use crossterm::event::EventStream;
 use pw_eq::filter::Filter;
 use pw_eq::tui::App;
-use pw_eq::{BandId, find_eq_node, use_eq};
+use pw_eq::{FilterId, find_eq_node, use_eq};
 use pw_util::config::FILTER_PREFIX;
 use ratatui::Terminal;
 use ratatui::prelude::CrosstermBackend;
@@ -53,13 +53,13 @@ struct Describe {
 }
 
 #[derive(Parser)]
-/// Set EQ band parameters (can only modify existing bands, not add new ones)
+/// Set EQ filter parameters (can only modify existing filters, not add new ones)
 #[command(group(clap::ArgGroup::new("params").required(true).multiple(true)))]
 struct Set {
     /// EQ name or ID
     profile: String,
-    /// Band number (depends on preset, use 'describe' to see available bands)
-    band: BandId,
+    /// Filter ID (depends on preset, use 'describe' to see available filters)
+    filter: FilterId,
     /// Set frequency in Hz
     #[arg(short, long, group = "params")]
     freq: Option<f64>,
@@ -139,7 +139,7 @@ async fn main() -> anyhow::Result<()> {
             println!("{table}");
         }
         Cmd::Describe(describe) => describe_eq(&describe).await?,
-        Cmd::Set(set) => set_band(set).await?,
+        Cmd::Set(set) => set_filter(set).await?,
         Cmd::Use(use_cmd) => {
             use_eq(&use_cmd.profile).await?;
         }
@@ -214,10 +214,10 @@ async fn create_eq(
     Ok(())
 }
 
-async fn set_band(
+async fn set_filter(
     Set {
         profile,
-        band,
+        filter,
         freq: frequency,
         gain,
         q,
@@ -232,7 +232,7 @@ async fn set_band(
 
     pw_eq::update_filter(
         node.id,
-        band,
+        filter,
         pw_eq::UpdateFilter {
             frequency,
             gain,
@@ -242,7 +242,10 @@ async fn set_band(
     )
     .await?;
 
-    println!("Updated band {band} on EQ '{profile}' (node {})", node.id);
+    println!(
+        "Updated filter {filter} on EQ '{profile}' (node {})",
+        node.id
+    );
 
     Ok(())
 }
@@ -252,7 +255,7 @@ async fn describe_eq(Describe { all, profile }: &Describe) -> anyhow::Result<()>
     let info = node.info;
 
     #[derive(Debug, Default)]
-    struct BandInfo {
+    struct FilterInfo {
         freq: Option<f64>,
         gain: Option<f64>,
         q: Option<f64>,
@@ -264,7 +267,7 @@ async fn describe_eq(Describe { all, profile }: &Describe) -> anyhow::Result<()>
         b2: Option<f64>,
     }
 
-    let mut band_info = BTreeMap::<BandId, BandInfo>::new();
+    let mut filter_infos = BTreeMap::<FilterId, FilterInfo>::new();
     // Dodgy parsing, weird structures. See `pw-dump <id>`
     for prop in info.params.props {
         for (key, value) in &prop.params.0 {
@@ -276,58 +279,58 @@ async fn describe_eq(Describe { all, profile }: &Describe) -> anyhow::Result<()>
             };
 
             let id = id
-                .parse::<BandId>()
-                .with_context(|| format!("invalid band index in parameter name: {key}"))?;
+                .parse::<FilterId>()
+                .with_context(|| format!("invalid filter id in parameter name: {key}"))?;
             let value = value
                 .as_f64()
                 .with_context(|| format!("invalid value for parameter {key}"))?;
 
-            let band_info = band_info.entry(id).or_default();
+            let filter_info = filter_infos.entry(id).or_default();
             match param_name {
-                "Freq" => band_info.freq = Some(value),
-                "Gain" => band_info.gain = Some(value),
-                "Q" => band_info.q = Some(value),
-                "a0" => band_info.a0 = Some(value),
-                "a1" => band_info.a1 = Some(value),
-                "a2" => band_info.a2 = Some(value),
-                "b0" => band_info.b0 = Some(value),
-                "b1" => band_info.b1 = Some(value),
-                "b2" => band_info.b2 = Some(value),
-                _ => anyhow::bail!("Unknown EQ band parameter: {param_name}"),
+                "Freq" => filter_info.freq = Some(value),
+                "Gain" => filter_info.gain = Some(value),
+                "Q" => filter_info.q = Some(value),
+                "a0" => filter_info.a0 = Some(value),
+                "a1" => filter_info.a1 = Some(value),
+                "a2" => filter_info.a2 = Some(value),
+                "b0" => filter_info.b0 = Some(value),
+                "b1" => filter_info.b1 = Some(value),
+                "b2" => filter_info.b2 = Some(value),
+                _ => anyhow::bail!("Unknown EQ filter parameter: {param_name}"),
             }
         }
 
-        if !band_info.is_empty() {
+        if !filter_infos.is_empty() {
             break;
         }
     }
 
     println!("EQ Profile: {profile}");
     println!("Node ID: {}", node.id);
-    println!("Bands:");
-    for (idx, band) in band_info {
-        let freq = band
+    println!("Filters:");
+    for (id, filter) in filter_infos {
+        let freq = filter
             .freq
-            .ok_or_else(|| anyhow::anyhow!("Missing frequency for band {idx}"))?;
-        let gain = band
+            .ok_or_else(|| anyhow::anyhow!("Missing frequency for filter {id}"))?;
+        let gain = filter
             .gain
-            .ok_or_else(|| anyhow::anyhow!("Missing gain for band {idx}"))?;
-        let q = band
+            .ok_or_else(|| anyhow::anyhow!("Missing gain for filter {id}"))?;
+        let q = filter
             .q
-            .ok_or_else(|| anyhow::anyhow!("Missing Q for band {idx}"))?;
+            .ok_or_else(|| anyhow::anyhow!("Missing Q for filter {id}"))?;
 
         if *all {
             println!(
-                "  Band {idx:>2}: Freq {freq:>8.2} Hz  Gain {gain:+5.2} dB  Q {q:.2} --> ({:.6}, {:.6}, {:.6}, {:.6}, {:.6}, {:.6})",
-                band.b0.unwrap_or(0.0),
-                band.b1.unwrap_or(0.0),
-                band.b2.unwrap_or(0.0),
-                band.a0.unwrap_or(0.0),
-                band.a1.unwrap_or(0.0),
-                band.a2.unwrap_or(0.0),
+                "  Filter {id:>2}: Freq {freq:>8.2} Hz  Gain {gain:+5.2} dB  Q {q:.2} --> ({:.6}, {:.6}, {:.6}, {:.6}, {:.6}, {:.6})",
+                filter.b0.unwrap_or(0.0),
+                filter.b1.unwrap_or(0.0),
+                filter.b2.unwrap_or(0.0),
+                filter.a0.unwrap_or(0.0),
+                filter.a1.unwrap_or(0.0),
+                filter.a2.unwrap_or(0.0),
             );
         } else {
-            println!("  Band {idx:>2}: Freq {freq:>8.2} Hz  Gain {gain:+5.2} dB  Q {q:.2}",);
+            println!("  Filter {id:>2}: Freq {freq:>8.2} Hz  Gain {gain:+5.2} dB  Q {q:.2}",);
         }
     }
 

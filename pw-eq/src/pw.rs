@@ -22,8 +22,8 @@ pub fn pw_thread(
     let mainloop = MainLoopRc::new(None).map_err(io::Error::other)?;
     let context = ContextRc::new(&mainloop, None).map_err(io::Error::other)?;
 
-    // Lazy-load modules per band count (1-20 bands)
-    // Each band count gets its own module that stays loaded
+    // Lazy-load modules per filter count (1-20 filters)
+    // Each filter count gets its own module that stays loaded
     // Dropping modules causes playback to pause, so we keep them around
     let modules: Mutex<HashMap<usize, api::ImplModule>> = Mutex::new(HashMap::new());
 
@@ -34,15 +34,15 @@ pub fn pw_thread(
             Message::Terminate => mainloop.quit(),
             Message::LoadModule { name, args } => {
                 // FIXME this count isn't necessary accurate if we use the param_eq config
-                let band_count = args.filter_graph.nodes.len();
+                let filter_count = args.filter_graph.nodes.len();
                 let spa_json_args = pw_util::to_spa_json(&args);
 
                 let mut modules = modules.lock().unwrap();
 
-                let module = match modules.entry(band_count) {
+                let module = match modules.entry(filter_count) {
                     Entry::Occupied(entry) => entry.into_mut(),
                     Entry::Vacant(entry) => {
-                        tracing::info!(band_count, "Loading new module for band count");
+                        tracing::info!(filter_count, "Loading new module for band count");
                         let module = match api::load_module(&context, &name, &spa_json_args) {
                             Ok(module) => module,
                             Err(err) => {

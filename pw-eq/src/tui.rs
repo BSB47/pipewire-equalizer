@@ -1,4 +1,4 @@
-use crate::{BandId, UpdateFilter, filter::Filter, update_filters, use_eq};
+use crate::{FilterId, UpdateFilter, filter::Filter, update_filters, use_eq};
 use std::{
     backtrace::Backtrace, error::Error, io, num::NonZero, ops::ControlFlow, pin::pin,
     sync::mpsc::Receiver,
@@ -236,8 +236,8 @@ impl EqState {
         }
     }
 
-    fn build_filter_update(&self, band_idx: usize, sample_rate: u32) -> UpdateFilter {
-        let band = &self.filters[band_idx];
+    fn build_filter_update(&self, filter_idx: usize, sample_rate: u32) -> UpdateFilter {
+        let band = &self.filters[filter_idx];
         let gain = if self.bypassed || band.muted {
             0.0
         } else {
@@ -255,7 +255,7 @@ impl EqState {
     fn apply_updates(
         &self,
         node_id: u32,
-        updates: impl IntoIterator<Item = (BandId, UpdateFilter), IntoIter: Send> + Send + 'static,
+        updates: impl IntoIterator<Item = (FilterId, UpdateFilter), IntoIter: Send> + Send + 'static,
     ) {
         tokio::spawn(async move {
             if let Err(err) = update_filters(node_id, updates).await {
@@ -267,12 +267,12 @@ impl EqState {
     /// Sync preamp gain to PipeWire
     fn sync_preamp(&self, node_id: u32) {
         let update = self.build_preamp_update();
-        self.apply_updates(node_id, [(BandId::Preamp, update)]);
+        self.apply_updates(node_id, [(FilterId::Preamp, update)]);
     }
 
     /// Sync a specific filter band to PipeWire
     fn sync_filter(&self, node_id: u32, band_idx: usize, sample_rate: u32) {
-        let band_id = BandId::Index(NonZero::new(band_idx + 1).unwrap());
+        let band_id = FilterId::Index(NonZero::new(band_idx + 1).unwrap());
         let update = self.build_filter_update(band_idx, sample_rate);
         self.apply_updates(node_id, [(band_id, update)]);
     }
@@ -281,11 +281,11 @@ impl EqState {
     fn sync_bypass(&self, node_id: u32, sample_rate: u32) {
         let mut updates = Vec::with_capacity(self.filters.len() + 1);
 
-        updates.push((BandId::Preamp, self.build_preamp_update()));
+        updates.push((FilterId::Preamp, self.build_preamp_update()));
 
         for idx in 0..self.filters.len() {
-            let band_id = BandId::Index(NonZero::new(idx + 1).unwrap());
-            updates.push((band_id, self.build_filter_update(idx, sample_rate)));
+            let id = FilterId::Index(NonZero::new(idx + 1).unwrap());
+            updates.push((id, self.build_filter_update(idx, sample_rate)));
         }
 
         self.apply_updates(node_id, updates);

@@ -3,7 +3,6 @@ use pw_util::{
     config::{BiquadCoefficients, FilterType},
 };
 
-// EQ Band state
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Filter {
     pub frequency: f64,

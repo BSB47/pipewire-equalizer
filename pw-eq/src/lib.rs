@@ -87,30 +87,30 @@ pub struct UpdateFilter {
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum BandId {
+pub enum FilterId {
     Preamp,
     Index(NonZero<usize>),
 }
 
-impl std::fmt::Display for BandId {
+impl std::fmt::Display for FilterId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            BandId::Preamp => write!(f, "preamp"),
-            BandId::Index(idx) => write!(f, "{idx}"),
+            FilterId::Preamp => write!(f, "preamp"),
+            FilterId::Index(idx) => write!(f, "{idx}"),
         }
     }
 }
 
-impl std::str::FromStr for BandId {
+impl std::str::FromStr for FilterId {
     type Err = anyhow::Error;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         if s.eq_ignore_ascii_case("preamp") {
-            Ok(BandId::Preamp)
+            Ok(FilterId::Preamp)
         } else {
-            let idx: usize = s.parse().context("Invalid band index")?;
-            let nz_idx = NonZero::new(idx).context("Band index must be non-zero")?;
-            Ok(BandId::Index(nz_idx))
+            let idx: usize = s.parse().context("Invalid filter index")?;
+            let nz_idx = NonZero::new(idx).context("Filter index must be non-zero")?;
+            Ok(FilterId::Index(nz_idx))
         }
     }
 }
@@ -119,7 +119,7 @@ impl std::str::FromStr for BandId {
 #[tracing::instrument(skip(updates))]
 pub async fn update_filters(
     node_id: u32,
-    updates: impl IntoIterator<Item = (BandId, UpdateFilter)>,
+    updates: impl IntoIterator<Item = (FilterId, UpdateFilter)>,
 ) -> anyhow::Result<()> {
     let mut updates = updates.into_iter().peekable();
     if updates.peek().is_none() {
@@ -127,40 +127,40 @@ pub async fn update_filters(
         return Ok(());
     }
 
-    tracing::debug!("updating filter bands");
-
     // Build the params array for pw-cli
     let mut params = Vec::new();
 
-    for (band_id, update) in updates {
+    for (filter_id, update) in updates {
         if let Some(freq) = update.frequency {
-            params.push(format!(r#""{FILTER_PREFIX}{band_id}:Freq""#));
+            params.push(format!(r#""{FILTER_PREFIX}{filter_id}:Freq""#));
             params.push(freq.to_string());
         }
 
         if let Some(gain_val) = update.gain {
-            params.push(format!(r#""{FILTER_PREFIX}{band_id}:Gain""#));
+            params.push(format!(r#""{FILTER_PREFIX}{filter_id}:Gain""#));
             params.push(gain_val.to_string());
         }
 
         if let Some(q_val) = update.q {
-            params.push(format!(r#""{FILTER_PREFIX}{band_id}:Q""#));
+            params.push(format!(r#""{FILTER_PREFIX}{filter_id}:Q""#));
             params.push(q_val.to_string());
         }
 
         if let Some(BiquadCoefficients { b0, b1, b2, a1, a2 }) = update.coeffs {
-            params.push(format!(r#""{FILTER_PREFIX}{band_id}:b0""#));
+            params.push(format!(r#""{FILTER_PREFIX}{filter_id}:b0""#));
             params.push(b0.to_string());
-            params.push(format!(r#""{FILTER_PREFIX}{band_id}:b1""#));
+            params.push(format!(r#""{FILTER_PREFIX}{filter_id}:b1""#));
             params.push(b1.to_string());
-            params.push(format!(r#""{FILTER_PREFIX}{band_id}:b2""#));
+            params.push(format!(r#""{FILTER_PREFIX}{filter_id}:b2""#));
             params.push(b2.to_string());
-            params.push(format!(r#""{FILTER_PREFIX}{band_id}:a1""#));
+            params.push(format!(r#""{FILTER_PREFIX}{filter_id}:a1""#));
             params.push(a1.to_string());
-            params.push(format!(r#""{FILTER_PREFIX}{band_id}:a2""#));
+            params.push(format!(r#""{FILTER_PREFIX}{filter_id}:a2""#));
             params.push(a2.to_string());
         }
     }
+
+    tracing::debug!(?params, "updating filter parameters");
 
     let output = Command::new("pw-cli")
         .arg("set-param")
@@ -178,12 +178,12 @@ pub async fn update_filters(
     Ok(())
 }
 
-/// Update a single filter band (convenience wrapper)
+/// Update a single filter (convenience wrapper)
 #[tracing::instrument(skip(update))]
 pub async fn update_filter(
     node_id: u32,
-    band_id: BandId,
+    filter_id: FilterId,
     update: UpdateFilter,
 ) -> anyhow::Result<()> {
-    update_filters(node_id, [(band_id, update)]).await
+    update_filters(node_id, [(filter_id, update)]).await
 }
