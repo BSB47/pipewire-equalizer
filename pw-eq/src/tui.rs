@@ -11,7 +11,10 @@ use crossterm::{
 };
 use futures_util::{Stream, StreamExt as _};
 use pw_util::{
-    config::{FilterType, Module, ModuleArgs, NodeKind, RateAndBiquadCoefficients, RawNodeConfig},
+    config::{
+        Config, Control, FilterType, Module, ModuleArgs, NodeKind, ParamEqConfig, ParamEqFilter,
+        RateAndBiquadCoefficients, RawNodeConfig,
+    },
     pipewire,
 };
 use ratatui::{
@@ -224,6 +227,35 @@ impl EqState {
             }),
         )
         .args
+    }
+
+    /// Save current EQ configuration to a PipeWire filter-chain config file using param_eq
+    async fn save_config(&self, path: impl AsRef<std::path::Path>) -> anyhow::Result<()> {
+        let config = Config::from_kinds(
+            &self.name,
+            self.preamp,
+            [NodeKind::ParamEq {
+                config: ParamEqConfig {
+                    filters: self
+                        .filters
+                        .iter()
+                        .map(|band| ParamEqFilter {
+                            ty: band.filter_type,
+                            control: Control {
+                                freq: band.frequency,
+                                q: band.q,
+                                gain: band.gain,
+                            },
+                        })
+                        .collect(),
+                },
+            }],
+        );
+
+        let spa_json = pw_util::to_spa_json(&config);
+        tokio::fs::write(path, spa_json).await?;
+
+        Ok(())
     }
 
     /// Build update for preamp

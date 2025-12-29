@@ -194,7 +194,7 @@ pub enum NodeKind {
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct ParamEqConfig {
-    filters: Vec<ParamEqFilter>,
+    pub filters: Vec<ParamEqFilter>,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
