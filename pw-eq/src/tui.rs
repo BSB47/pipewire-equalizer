@@ -32,12 +32,19 @@ enum Rotation {
     CounterClockwise,
 }
 
+#[derive(Clone, Copy)]
+enum ViewMode {
+    Normal,
+    Expert,
+}
+
 // EQ state
 struct EqState {
     name: String,
     filters: Vec<Filter>,
     selected_band: usize,
     max_bands: usize,
+    view_mode: ViewMode,
 }
 
 impl EqState {
@@ -78,6 +85,7 @@ impl EqState {
             ],
             selected_band: 0,
             max_bands: 20,
+            view_mode: ViewMode::Normal,
         }
     }
 
@@ -168,6 +176,13 @@ impl EqState {
         if let Some(band) = self.filters.get_mut(self.selected_band) {
             band.muted = !band.muted;
         }
+    }
+
+    fn toggle_view_mode(&mut self) {
+        self.view_mode = match self.view_mode {
+            ViewMode::Normal => ViewMode::Expert,
+            ViewMode::Expert => ViewMode::Normal,
+        };
     }
 
     fn to_module_args(&self, rate: u32) -> ModuleArgs {
@@ -403,6 +418,9 @@ where
             // Mute
             KeyCode::Char('m') => self.eq_state.toggle_mute(),
 
+            // View mode
+            KeyCode::Char('e') => self.eq_state.toggle_view_mode(),
+
             // Band management
             KeyCode::Char('a') => self.eq_state.add_band(),
             KeyCode::Char('d') => self.eq_state.delete_selected_band(),
@@ -477,14 +495,14 @@ where
             f.render_widget(header, chunks[0]);
 
             // Band table
-            Self::draw_band_table(f, chunks[1], eq_state);
+            Self::draw_band_table(f, chunks[1], eq_state, sample_rate);
 
             // Frequency response chart
             Self::draw_frequency_response(f, chunks[2], eq_state, sample_rate);
 
             // Footer/Help
             let help = Paragraph::new(
-                "Tab/j/k: select | t: type | m: mute | f/F: freq | g/G: gain | q/Q: Q | a: add | d: delete | 0: zero | Esc/C-c: quit"
+                "Tab/j/k: select | t: type | m: mute | e: expert | f/F: freq | g/G: gain | q/Q: Q | a: add | d: delete | 0: zero | Esc/C-c: quit"
             )
             .block(Block::default().borders(Borders::ALL));
             f.render_widget(help, chunks[3]);
@@ -492,7 +510,7 @@ where
         Ok(())
     }
 
-    fn draw_band_table(f: &mut ratatui::Frame, area: Rect, eq_state: &EqState) {
+    fn draw_band_table(f: &mut ratatui::Frame, area: Rect, eq_state: &EqState, sample_rate: u32) {
         let rows: Vec<Row> = eq_state
             .filters
             .iter()
@@ -545,8 +563,16 @@ where
                     gain_color
                 };
 
-                // Create cells with individual styling
-                let cells = vec![
+                let coeff_color = if band.muted {
+                    Color::DarkGray
+                } else if is_selected {
+                    Color::Green
+                } else {
+                    Color::Gray
+                };
+
+                // Create base cells
+                let mut cells = vec![
                     Cell::from(format!("{}", idx + 1)).style(
                         Style::default().fg(num_color).add_modifier(
                             if is_selected && !band.muted {
@@ -590,39 +616,77 @@ where
                     ),
                 ];
 
+                // Add biquad coefficients in expert mode
+                if matches!(eq_state.view_mode, ViewMode::Expert) {
+                    let coeffs = band.biquad_coeffs(sample_rate as f64);
+                    cells.extend([
+                        Cell::from(format!("{:.6}", coeffs.b0))
+                            .style(Style::default().fg(coeff_color)),
+                        Cell::from(format!("{:.6}", coeffs.b1))
+                            .style(Style::default().fg(coeff_color)),
+                        Cell::from(format!("{:.6}", coeffs.b2))
+                            .style(Style::default().fg(coeff_color)),
+                        Cell::from(format!("{:.6}", coeffs.a1))
+                            .style(Style::default().fg(coeff_color)),
+                        Cell::from(format!("{:.6}", coeffs.a2))
+                            .style(Style::default().fg(coeff_color)),
+                    ]);
+                }
+
                 Row::new(cells)
             })
             .collect();
 
-        let table = Table::new(
-            rows,
-            [
-                Constraint::Length(3), // #
-                Constraint::Length(4), // Type
-                Constraint::Length(8), // Freq
-                Constraint::Length(9), // Gain (dB)
-                Constraint::Length(6), // Q
-            ],
-        )
-        .header(
-            Row::new(vec!["#", "Type", "Freq", "Gain", "Q"])
-                .style(
-                    Style::default()
-                        .fg(Color::White)
-                        .add_modifier(Modifier::BOLD | Modifier::UNDERLINED),
-                )
-                .bottom_margin(1),
-        )
-        .block(
-            Block::default()
-                .borders(Borders::ALL)
-                .title("EQ Bands")
-                .title_style(
-                    Style::default()
-                        .fg(Color::Cyan)
-                        .add_modifier(Modifier::BOLD),
-                ),
-        );
+        let (constraints, header_cells, title) = match eq_state.view_mode {
+            ViewMode::Normal => (
+                vec![
+                    Constraint::Length(3), // #
+                    Constraint::Length(4), // Type
+                    Constraint::Length(8), // Freq
+                    Constraint::Length(9), // Gain (dB)
+                    Constraint::Length(6), // Q
+                ],
+                vec!["#", "Type", "Freq", "Gain", "Q"],
+                "EQ Bands",
+            ),
+            ViewMode::Expert => (
+                vec![
+                    Constraint::Length(3),  // #
+                    Constraint::Length(4),  // Type
+                    Constraint::Length(8),  // Freq
+                    Constraint::Length(9),  // Gain (dB)
+                    Constraint::Length(6),  // Q
+                    Constraint::Length(11), // b0
+                    Constraint::Length(11), // b1
+                    Constraint::Length(11), // b2
+                    Constraint::Length(11), // a1
+                    Constraint::Length(11), // a2
+                ],
+                vec!["#", "Type", "Freq", "Gain", "Q", "b0", "b1", "b2", "a1", "a2"],
+                "EQ Bands (Expert Mode)",
+            ),
+        };
+
+        let table = Table::new(rows, constraints)
+            .header(
+                Row::new(header_cells)
+                    .style(
+                        Style::default()
+                            .fg(Color::White)
+                            .add_modifier(Modifier::BOLD | Modifier::UNDERLINED),
+                    )
+                    .bottom_margin(1),
+            )
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .title(title)
+                    .title_style(
+                        Style::default()
+                            .fg(Color::Cyan)
+                            .add_modifier(Modifier::BOLD),
+                    ),
+            );
 
         f.render_widget(table, area);
     }
