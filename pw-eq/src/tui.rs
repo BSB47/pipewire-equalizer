@@ -161,10 +161,10 @@ impl EqState {
             &format!("{}-{}", self.name, self.filters.len()),
             self.filters.iter().map(|band| NodeKind::Raw {
                 config: RawNodeConfig {
-                    coefficients: RateAndBiquadCoefficients {
+                    coefficients: vec![RateAndBiquadCoefficients {
                         rate,
                         coefficients: band.biquad_coeffs(rate),
-                    },
+                    }],
                 },
             }),
         )

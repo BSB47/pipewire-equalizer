@@ -13,6 +13,12 @@ pub struct Config {
 }
 
 impl Config {
+    pub fn from_kinds(name: &str, kinds: impl IntoIterator<Item = NodeKind>) -> Self {
+        Config {
+            context_modules: vec![Module::from_kinds(name, kinds)],
+        }
+    }
+
     pub fn from_apo(name: &str, apo: &apo::Config) -> Self {
         Config {
             context_modules: vec![Module::from_apo(name, apo)],
@@ -146,6 +152,7 @@ pub enum AudioPosition {
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct FilterGraph {
     pub nodes: Box<[Node]>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
     pub links: Vec<Link>,
 }
 
@@ -189,7 +196,7 @@ pub struct ParamEqFilter {
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct RawNodeConfig {
-    pub coefficients: RateAndBiquadCoefficients,
+    pub coefficients: Vec<RateAndBiquadCoefficients>,
 }
 
 /// Sample rate mapped to biquad coefficients
@@ -308,11 +315,84 @@ impl fmt::Display for SpaJson<'_> {
 mod tests {
     use crate::{
         apo::{self, FilterType},
+        config::{BiquadCoefficients, NodeKind, RateAndBiquadCoefficients, RawNodeConfig},
         to_spa_json,
     };
     use expect_test::expect;
 
     use super::Config;
+
+    #[test]
+    fn test_generate_config_from_raw() {
+        let out = to_spa_json(&Config::from_kinds(
+            "test-eq",
+            [NodeKind::Raw {
+                config: RawNodeConfig {
+                    coefficients: vec![RateAndBiquadCoefficients {
+                        rate: 48000.0,
+                        coefficients: BiquadCoefficients {
+                            b0: 0.0,
+                            b1: 0.1,
+                            b2: 0.2,
+                            a0: 1.0,
+                            a1: 0.3,
+                            a2: 0.4,
+                        },
+                    }],
+                },
+            }],
+        ));
+
+        expect![[r#"
+            {
+                context.modules = [
+                    {
+                        name = "libpipewire-module-filter-chain"
+                        args = {
+                            node.description = "test-eq equalizer"
+                            media.name = "test-eq"
+                            filter.graph = {
+                                nodes = [
+                                    {
+                                        type = "builtin"
+                                        name = "pweq.filter1"
+                                        label = "bq_raw"
+                                        config = {
+                                            coefficients = [
+                                                {
+                                                    rate = 48000.0
+                                                    b0 = 0.0
+                                                    b1 = 0.1
+                                                    b2 = 0.2
+                                                    a0 = 1.0
+                                                    a1 = 0.3
+                                                    a2 = 0.4
+                                                }
+                                            ]
+                                        }
+                                    }
+                                ]
+                            }
+                            audio.channels = 2
+                            audio_position = [
+                                "FL"
+                                "FR"
+                            ]
+                            playback.props = {
+                                node.name = "effect_input.pweq.test-eq"
+                                node.passive = false
+                            }
+                            capture.props = {
+                                node.name = "effect_output.pweq.test-eq"
+                                media.class = "Audio/Sink"
+                                pweq.managed = true
+                            }
+                        }
+                    }
+                ]
+            }"#]]
+        .assert_eq(&out);
+    }
 
     #[test]
     fn test_generate_config_from_apo() {
@@ -338,8 +418,7 @@ mod tests {
             ],
         };
 
-        let cfg = Config::from_apo("test-eq", &config);
-        let out = to_spa_json(&cfg);
+        let out = to_spa_json(&Config::from_apo("test-eq", &config));
 
         expect![[r#"
             {
