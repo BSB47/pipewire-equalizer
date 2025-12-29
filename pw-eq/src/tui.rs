@@ -237,12 +237,11 @@ impl EqState {
     }
 
     fn build_filter_update(&self, filter_idx: usize, sample_rate: u32) -> UpdateFilter {
-        let band = &self.filters[filter_idx];
-        let gain = if self.bypassed || band.muted {
-            0.0
-        } else {
-            band.gain
-        };
+        // Locally copy the band to modify muted state based on bypass
+        // This is necessary to get the correct biquad coefficients
+        let mut band = self.filters[filter_idx];
+        band.muted |= self.bypassed;
+        let gain = if band.muted { 0.0 } else { band.gain };
 
         UpdateFilter {
             frequency: Some(band.frequency),
@@ -464,7 +463,7 @@ where
     }
 
     fn handle_key(&mut self, key: KeyEvent) -> io::Result<ControlFlow<()>> {
-        tracing::debug!(key = ?key, "key event");
+        tracing::trace!(?key, "key event");
 
         let before_idx = self.eq_state.selected_band;
         let before_band = self.eq_state.filters[self.eq_state.selected_band];

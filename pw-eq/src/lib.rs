@@ -160,7 +160,7 @@ pub async fn update_filters(
         }
     }
 
-    tracing::debug!(?params, "updating filter parameters");
+    tracing::trace!(?params, "updating filter parameters");
 
     let output = Command::new("pw-cli")
         .arg("set-param")
