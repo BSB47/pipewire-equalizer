@@ -36,7 +36,6 @@ pub fn pw_thread(
                 // FIXME this count isn't necessary accurate if we use the param_eq config
                 let band_count = args.filter_graph.nodes.len();
                 let spa_json_args = pw_util::to_spa_json(&args);
-                tracing::error!(spa_json_args = spa_json_args, "Loading module with args");
 
                 let mut modules = modules.lock().unwrap();
 

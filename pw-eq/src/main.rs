@@ -3,14 +3,13 @@ use clap::Parser;
 use crossterm::event::EventStream;
 use pw_eq::filter::Filter;
 use pw_eq::tui::App;
-use pw_eq::{find_eq_node, use_eq};
+use pw_eq::{BandId, find_eq_node, use_eq};
 use pw_util::config::FILTER_PREFIX;
 use ratatui::Terminal;
 use ratatui::prelude::CrosstermBackend;
 use std::backtrace::Backtrace;
 use std::collections::BTreeMap;
 use std::fs::File;
-use std::num::NonZero;
 use std::path::PathBuf;
 use tabled::Table;
 use tokio::fs;
@@ -60,7 +59,7 @@ struct Set {
     /// EQ name or ID
     profile: String,
     /// Band number (depends on preset, use 'describe' to see available bands)
-    band: NonZero<usize>,
+    band: BandId,
     /// Set frequency in Hz
     #[arg(short, long, group = "params")]
     freq: Option<f64>,
@@ -243,10 +242,7 @@ async fn set_band(
     )
     .await?;
 
-    println!(
-        "Updated band {} on EQ '{}' (node {})",
-        band, profile, node.id
-    );
+    println!("Updated band {band} on EQ '{profile}' (node {})", node.id);
 
     Ok(())
 }
@@ -268,25 +264,25 @@ async fn describe_eq(Describe { all, profile }: &Describe) -> anyhow::Result<()>
         b2: Option<f64>,
     }
 
-    let mut band_info = BTreeMap::<usize, BandInfo>::new();
+    let mut band_info = BTreeMap::<BandId, BandInfo>::new();
     // Dodgy parsing, weird structures. See `pw-dump <id>`
     for prop in info.params.props {
         for (key, value) in &prop.params.0 {
-            let Some((idx, param_name)) = key
+            let Some((id, param_name)) = key
                 .strip_prefix(FILTER_PREFIX)
                 .and_then(|s| s.split_once(':'))
             else {
                 continue;
             };
 
-            let idx = idx
-                .parse::<usize>()
+            let id = id
+                .parse::<BandId>()
                 .with_context(|| format!("invalid band index in parameter name: {key}"))?;
             let value = value
                 .as_f64()
                 .with_context(|| format!("invalid value for parameter {key}"))?;
 
-            let band_info = band_info.entry(idx).or_default();
+            let band_info = band_info.entry(id).or_default();
             match param_name {
                 "Freq" => band_info.freq = Some(value),
                 "Gain" => band_info.gain = Some(value),

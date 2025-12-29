@@ -4,7 +4,7 @@ use std::fmt;
 // Property to mark nodes as managed by pw-eq
 // Ensure this matches the field name in CaptureProps
 pub const MANAGED_PROP: &str = "pweq.managed";
-pub const FILTER_PREFIX: &str = "pweq.filter";
+pub const FILTER_PREFIX: &str = "pweq.filter_";
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Config {
@@ -34,9 +34,9 @@ pub struct Module {
 
 impl Module {
     pub fn from_kinds(name: &str, preamp: f64, kinds: impl IntoIterator<Item = NodeKind>) -> Self {
-        let preamp_node = (preamp != 0.0).then(|| Node {
+        let preamp_node = Node {
             node_type: NodeType::Builtin,
-            name: format!("{FILTER_PREFIX}_preamp"),
+            name: format!("{FILTER_PREFIX}preamp"),
             kind: NodeKind::HighShelf {
                 control: Control {
                     // pipewire biquad high-shelf has a special case for freq=0 that applies gain uniformly
@@ -45,10 +45,9 @@ impl Module {
                     gain: preamp,
                 },
             },
-        });
+        };
 
-        let nodes: Vec<Node> = preamp_node
-            .into_iter()
+        let nodes: Vec<Node> = std::iter::once(preamp_node)
             .chain(kinds.into_iter().enumerate().map(|(i, kind)| Node {
                 node_type: NodeType::Builtin,
                 name: format!("{FILTER_PREFIX}{}", i + 1),
@@ -367,7 +366,17 @@ mod tests {
                                 nodes = [
                                     {
                                         type = "builtin"
-                                        name = "pweq.filter1"
+                                        name = "pweq.filter_preamp"
+                                        label = "bq_highshelf"
+                                        control = {
+                                            Freq = 0.0
+                                            Q = 0.0
+                                            Gain = 0.0
+                                        }
+                                    }
+                                    {
+                                        type = "builtin"
+                                        name = "pweq.filter_1"
                                         label = "bq_raw"
                                         config = {
                                             coefficients = [
@@ -381,6 +390,12 @@ mod tests {
                                                 }
                                             ]
                                         }
+                                    }
+                                ]
+                                links = [
+                                    {
+                                        output = "pweq.filter_preamp:Out"
+                                        input = "pweq.filter_1:In"
                                     }
                                 ]
                             }
@@ -453,7 +468,7 @@ mod tests {
                                     }
                                     {
                                         type = "builtin"
-                                        name = "pweq.filter1"
+                                        name = "pweq.filter_1"
                                         label = "bq_peaking"
                                         control = {
                                             Freq = 46.0
@@ -463,7 +478,7 @@ mod tests {
                                     }
                                     {
                                         type = "builtin"
-                                        name = "pweq.filter2"
+                                        name = "pweq.filter_2"
                                         label = "bq_lowshelf"
                                         control = {
                                             Freq = 105.0
@@ -475,11 +490,11 @@ mod tests {
                                 links = [
                                     {
                                         output = "pweq.filter_preamp:Out"
-                                        input = "pweq.filter1:In"
+                                        input = "pweq.filter_1:In"
                                     }
                                     {
-                                        output = "pweq.filter1:Out"
-                                        input = "pweq.filter2:In"
+                                        output = "pweq.filter_1:Out"
+                                        input = "pweq.filter_2:In"
                                     }
                                 ]
                             }

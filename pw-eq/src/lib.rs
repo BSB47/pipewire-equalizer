@@ -86,10 +86,39 @@ pub struct UpdateFilter {
     pub coeffs: Option<BiquadCoefficients>,
 }
 
-#[tracing::instrument(skip_all, fields(node_id, band_idx))]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum BandId {
+    Preamp,
+    Index(NonZero<usize>),
+}
+
+impl std::fmt::Display for BandId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            BandId::Preamp => write!(f, "preamp"),
+            BandId::Index(idx) => write!(f, "{idx}"),
+        }
+    }
+}
+
+impl std::str::FromStr for BandId {
+    type Err = anyhow::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        if s.eq_ignore_ascii_case("preamp") {
+            Ok(BandId::Preamp)
+        } else {
+            let idx: usize = s.parse().context("Invalid band index")?;
+            let nz_idx = NonZero::new(idx).context("Band index must be non-zero")?;
+            Ok(BandId::Index(nz_idx))
+        }
+    }
+}
+
+#[tracing::instrument(skip(update))]
 pub async fn update_filter(
     node_id: u32,
-    band_idx: NonZero<usize>,
+    band_id: BandId,
     update: UpdateFilter,
 ) -> anyhow::Result<()> {
     tracing::debug!(?update, "updating filter band");
@@ -98,30 +127,30 @@ pub async fn update_filter(
     let mut params = Vec::new();
 
     if let Some(freq) = update.frequency {
-        params.push(format!(r#""{FILTER_PREFIX}{band_idx}:Freq""#));
+        params.push(format!(r#""{FILTER_PREFIX}{band_id}:Freq""#));
         params.push(freq.to_string());
     }
 
     if let Some(gain_val) = update.gain {
-        params.push(format!(r#""{FILTER_PREFIX}{band_idx}:Gain""#));
+        params.push(format!(r#""{FILTER_PREFIX}{band_id}:Gain""#));
         params.push(gain_val.to_string());
     }
 
     if let Some(q_val) = update.q {
-        params.push(format!(r#""{FILTER_PREFIX}{band_idx}:Q""#));
+        params.push(format!(r#""{FILTER_PREFIX}{band_id}:Q""#));
         params.push(q_val.to_string());
     }
 
     if let Some(BiquadCoefficients { b0, b1, b2, a1, a2 }) = update.coeffs {
-        params.push(format!(r#""{FILTER_PREFIX}{band_idx}:b0""#));
+        params.push(format!(r#""{FILTER_PREFIX}{band_id}:b0""#));
         params.push(b0.to_string());
-        params.push(format!(r#""{FILTER_PREFIX}{band_idx}:b1""#));
+        params.push(format!(r#""{FILTER_PREFIX}{band_id}:b1""#));
         params.push(b1.to_string());
-        params.push(format!(r#""{FILTER_PREFIX}{band_idx}:b2""#));
+        params.push(format!(r#""{FILTER_PREFIX}{band_id}:b2""#));
         params.push(b2.to_string());
-        params.push(format!(r#""{FILTER_PREFIX}{band_idx}:a1""#));
+        params.push(format!(r#""{FILTER_PREFIX}{band_id}:a1""#));
         params.push(a1.to_string());
-        params.push(format!(r#""{FILTER_PREFIX}{band_idx}:a2""#));
+        params.push(format!(r#""{FILTER_PREFIX}{band_id}:a2""#));
         params.push(a2.to_string());
     }
 

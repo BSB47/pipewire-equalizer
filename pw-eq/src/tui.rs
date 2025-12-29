@@ -1,4 +1,4 @@
-use crate::{UpdateFilter, filter::Filter, update_filter, use_eq};
+use crate::{BandId, UpdateFilter, filter::Filter, update_filter, use_eq};
 use std::{
     backtrace::Backtrace, error::Error, io, num::NonZero, ops::ControlFlow, pin::pin,
     sync::mpsc::Receiver,
@@ -463,10 +463,27 @@ where
         }
 
         if let Some(node_id) = self.active_node_id
+            && before_preamp != self.eq_state.preamp
+        {
+            let update = UpdateFilter {
+                frequency: None,
+                gain: Some(self.eq_state.preamp),
+                q: None,
+                coeffs: None,
+            };
+
+            tokio::spawn(async move {
+                if let Err(err) = update_filter(node_id, BandId::Preamp, update).await {
+                    tracing::error!(error = %err, "failed to update preamp");
+                }
+            });
+        }
+
+        if let Some(node_id) = self.active_node_id
             && self.eq_state.selected_band == before_idx
-            && self.eq_state.preamp != before_preamp
             && self.eq_state.filters[self.eq_state.selected_band] != before_band
         {
+            // +1 to convert 0-based to 1-based index (not due to preamp), maybe we should just zero index all
             let band_idx = NonZero::new(self.eq_state.selected_band + 1).unwrap();
             let band = &self.eq_state.filters[self.eq_state.selected_band];
 
@@ -481,7 +498,7 @@ where
             };
 
             tokio::spawn(async move {
-                if let Err(err) = update_filter(node_id, band_idx, update).await {
+                if let Err(err) = update_filter(node_id, BandId::Index(band_idx), update).await {
                     tracing::error!(error = %err, "failed to update band");
                 }
             });
