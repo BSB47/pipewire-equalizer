@@ -169,7 +169,7 @@ pub enum NodeKind {
     #[serde(rename = "bq_highshelf")]
     HighShelf { control: Control },
     #[serde(rename = "bq_raw")]
-    Raw { config: RawConfig },
+    Raw { config: RawNodeConfig },
     #[serde(rename = "param_eq")]
     ParamEq { config: ParamEqConfig },
 }
@@ -182,32 +182,32 @@ pub struct ParamEqConfig {
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct ParamEqFilter {
     #[serde(rename = "type")]
-    ty: FilterType,
+    pub ty: FilterType,
     #[serde(flatten)]
-    control: Control,
+    pub control: Control,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct RawConfig {
-    coefficients: RateAndBiquadCoefficients,
+pub struct RawNodeConfig {
+    pub coefficients: RateAndBiquadCoefficients,
 }
 
 /// Sample rate mapped to biquad coefficients
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct RateAndBiquadCoefficients {
-    rate: f32,
+    pub rate: f64,
     #[serde(flatten)]
-    coefficients: BiquadCoefficients,
+    pub coefficients: BiquadCoefficients,
 }
 
-#[derive(Debug, Clone, Copy, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct BiquadCoefficients {
-    pub b0: f32,
-    pub b1: f32,
-    pub b2: f32,
-    pub a0: f32,
-    pub a1: f32,
-    pub a2: f32,
+    pub b0: f64,
+    pub b1: f64,
+    pub b2: f64,
+    pub a0: f64,
+    pub a1: f64,
+    pub a2: f64,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -216,7 +216,7 @@ pub enum NodeType {
     Builtin,
 }
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum FilterType {
     #[serde(rename = "bq_peaking")]
     Peaking,

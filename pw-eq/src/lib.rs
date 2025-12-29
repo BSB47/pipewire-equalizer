@@ -5,7 +5,7 @@ pub mod tui;
 use std::num::NonZero;
 
 use anyhow::Context;
-use pw_util::config::{FILTER_PREFIX, MANAGED_PROP};
+use pw_util::config::{BiquadCoefficients, FILTER_PREFIX, MANAGED_PROP};
 use tabled::Tabled;
 use tokio::process::Command;
 
@@ -83,7 +83,7 @@ pub struct UpdateFilter {
     pub frequency: Option<f64>,
     pub gain: Option<f64>,
     pub q: Option<f64>,
-    pub coeffs: Option<(f64, f64, f64, f64, f64, f64)>,
+    pub coeffs: Option<BiquadCoefficients>,
 }
 
 #[tracing::instrument(skip_all, fields(node_id, band_idx))]
@@ -112,7 +112,15 @@ pub async fn update_filter(
         params.push(q_val.to_string());
     }
 
-    if let Some((b0, b1, b2, a0, a1, a2)) = update.coeffs {
+    if let Some(BiquadCoefficients {
+        b0,
+        b1,
+        b2,
+        a0,
+        a1,
+        a2,
+    }) = update.coeffs
+    {
         params.push(format!(r#""{FILTER_PREFIX}{band_idx}:b0""#));
         params.push(b0.to_string());
         params.push(format!(r#""{FILTER_PREFIX}{band_idx}:b1""#));

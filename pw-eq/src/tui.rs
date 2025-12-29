@@ -11,8 +11,7 @@ use crossterm::{
 };
 use futures_util::{Stream, StreamExt as _};
 use pw_util::{
-    apo::{self, FilterType},
-    config::ModuleArgs,
+    config::{FilterType, Module, ModuleArgs, NodeKind, RateAndBiquadCoefficients, RawNodeConfig},
     pipewire,
 };
 use ratatui::{
@@ -157,32 +156,17 @@ impl EqState {
         }
     }
 
-    fn to_apo_config(&self) -> apo::Config {
-        let filters = self
-            .filters
-            .iter()
-            .enumerate()
-            .map(|(idx, band)| apo::Filter {
-                number: (idx + 1) as u32,
-                enabled: !band.muted,
-                filter_type: band.filter_type,
-                freq: band.frequency as f32,
-                gain: band.gain as f32,
-                q: band.q as f32,
-            })
-            .collect();
-
-        apo::Config {
-            preamp: None,
-            filters,
-        }
-    }
-
-    fn to_module_args(&self) -> ModuleArgs {
-        let apo_config = self.to_apo_config();
-        pw_util::config::Module::from_apo(
+    fn to_module_args(&self, rate: f64) -> ModuleArgs {
+        Module::from_kinds(
             &format!("{}-{}", self.name, self.filters.len()),
-            &apo_config,
+            self.filters.iter().map(|band| NodeKind::Raw {
+                config: RawNodeConfig {
+                    coefficients: RateAndBiquadCoefficients {
+                        rate,
+                        coefficients: band.biquad_coeffs(rate),
+                    },
+                },
+            }),
         )
         .args
     }
@@ -419,7 +403,7 @@ where
                 tracing::info!("Loading PipeWire EQ module");
                 let _ = self.pw_tx.send(pw::Message::LoadModule {
                     name: "libpipewire-module-filter-chain".into(),
-                    args: Box::new(self.eq_state.to_module_args()),
+                    args: Box::new(self.eq_state.to_module_args(self.sample_rate)),
                 });
             }
 
@@ -435,12 +419,12 @@ where
 
             // Always send both params and coefficients. This is a bit weird but seems to be
             // necessary to get the changes to apply correctly in all cases.
-            let (b0, b1, b2, a0, a1, a2) = band.biquad_coeffs(self.sample_rate);
+            let coeffs = band.biquad_coeffs(self.sample_rate);
             let update = UpdateFilter {
                 frequency: Some(band.frequency),
                 gain: Some(if band.muted { 0.0 } else { band.gain }),
                 q: Some(band.q),
-                coeffs: Some((b0, b1, b2, a0, a1, a2)),
+                coeffs: Some(coeffs),
             };
 
             tokio::spawn(async move {

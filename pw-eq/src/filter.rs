@@ -1,4 +1,4 @@
-use pw_util::apo::FilterType;
+use pw_util::config::{BiquadCoefficients, FilterType};
 
 // EQ Band state
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -26,7 +26,7 @@ impl Filter {
     /// Calculate biquad coefficients based on filter type
     /// Returns normalized (b0, b1, b2, a0, a1, a2) where a0 = 1.0
     /// If muted, calculates with 0 gain (bypass)
-    pub fn biquad_coeffs(&self, sample_rate: f64) -> (f64, f64, f64, f64, f64, f64) {
+    pub fn biquad_coeffs(&self, sample_rate: f64) -> BiquadCoefficients {
         use std::f64::consts::PI;
 
         let w0 = 2.0 * PI * self.frequency / sample_rate;
@@ -71,7 +71,14 @@ impl Filter {
         };
 
         // Normalize by dividing all coefficients by a0
-        (b0 / a0, b1 / a0, b2 / a0, 1.0, a1 / a0, a2 / a0)
+        BiquadCoefficients {
+            b0: b0 / a0,
+            b1: b1 / a0,
+            b2: b2 / a0,
+            a0: 1.0,
+            a1: a1 / a0,
+            a2: a2 / a0,
+        }
     }
 
     /// Calculate magnitude response in dB at a given frequency
@@ -83,7 +90,14 @@ impl Filter {
 
         use std::f64::consts::PI;
 
-        let (b0, b1, b2, a0, a1, a2) = self.biquad_coeffs(sample_rate);
+        let BiquadCoefficients {
+            b0,
+            b1,
+            b2,
+            a0,
+            a1,
+            a2,
+        } = self.biquad_coeffs(sample_rate);
         let w = 2.0 * PI * freq / sample_rate;
 
         // Numerator (zeros)
