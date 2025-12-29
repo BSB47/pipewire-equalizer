@@ -644,9 +644,10 @@ where
                 };
 
                 let is_selected = idx == eq_state.selected_band;
+                let is_dimmed = band.muted || eq_state.bypassed;
 
-                // Dim muted filters
-                let (num_color, type_color, freq_color, q_color) = if band.muted {
+                // Dim muted or bypassed filters
+                let (num_color, type_color, freq_color, q_color) = if is_dimmed {
                     (
                         Color::DarkGray,
                         Color::DarkGray,
@@ -659,13 +660,13 @@ where
                     (Color::DarkGray, Color::Gray, Color::White, Color::White)
                 };
 
-                let final_gain_color = if band.muted {
+                let final_gain_color = if is_dimmed {
                     Color::DarkGray
                 } else {
                     gain_color
                 };
 
-                let coeff_color = if band.muted {
+                let coeff_color = if is_dimmed {
                     Color::DarkGray
                 } else if is_selected {
                     Color::Green
@@ -677,7 +678,7 @@ where
                 let mut cells = vec![
                     Cell::from(format!("{}", idx + 1)).style(
                         Style::default().fg(num_color).add_modifier(
-                            if is_selected && !band.muted {
+                            if is_selected && !is_dimmed {
                                 Modifier::BOLD
                             } else {
                                 Modifier::empty()
@@ -685,14 +686,14 @@ where
                         ),
                     ),
                     Cell::from(type_str).style(Style::default().fg(type_color).add_modifier(
-                        if is_selected && !band.muted {
+                        if is_selected && !is_dimmed {
                             Modifier::BOLD
                         } else {
                             Modifier::empty()
                         },
                     )),
                     Cell::from(freq_str).style(Style::default().fg(freq_color).add_modifier(
-                        if is_selected && !band.muted {
+                        if is_selected && !is_dimmed {
                             Modifier::BOLD
                         } else {
                             Modifier::empty()
@@ -700,7 +701,7 @@ where
                     )),
                     Cell::from(format!("{:+.1}", band.gain)).style(
                         Style::default().fg(final_gain_color).add_modifier(
-                            if is_selected && !band.muted {
+                            if is_selected && !is_dimmed {
                                 Modifier::BOLD
                             } else {
                                 Modifier::empty()
@@ -710,7 +711,7 @@ where
                     Cell::from(format!("{:.2}", band.q)).style(
                         Style::default()
                             .fg(q_color)
-                            .add_modifier(if is_selected && !band.muted {
+                            .add_modifier(if is_selected && !is_dimmed {
                                 Modifier::BOLD
                             } else {
                                 Modifier::empty()
