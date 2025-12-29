@@ -75,7 +75,6 @@ impl Filter {
             b0: b0 / a0,
             b1: b1 / a0,
             b2: b2 / a0,
-            a0: 1.0,
             a1: a1 / a0,
             a2: a2 / a0,
         }
@@ -90,14 +89,7 @@ impl Filter {
 
         use std::f64::consts::PI;
 
-        let BiquadCoefficients {
-            b0,
-            b1,
-            b2,
-            a0,
-            a1,
-            a2,
-        } = self.biquad_coeffs(sample_rate);
+        let BiquadCoefficients { b0, b1, b2, a1, a2 } = self.biquad_coeffs(sample_rate);
         let w = 2.0 * PI * freq / sample_rate;
 
         // Numerator (zeros)
@@ -105,7 +97,7 @@ impl Filter {
         let im_num = b1 * w.sin() + b2 * (2.0 * w).sin();
 
         // Denominator (poles)
-        let re_den = a0 + a1 * w.cos() + a2 * (2.0 * w).cos();
+        let re_den = 1.0 + a1 * w.cos() + a2 * (2.0 * w).cos();
         let im_den = a1 * w.sin() + a2 * (2.0 * w).sin();
 
         let mag_num = (re_num * re_num + im_num * im_num).sqrt();

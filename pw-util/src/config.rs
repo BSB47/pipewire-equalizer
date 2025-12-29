@@ -208,11 +208,11 @@ pub struct RateAndBiquadCoefficients {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
+/// Normalized biquad coefficients, with a0 = 1.0
 pub struct BiquadCoefficients {
     pub b0: f64,
     pub b1: f64,
     pub b2: f64,
-    pub a0: f64,
     pub a1: f64,
     pub a2: f64,
 }
@@ -334,7 +334,6 @@ mod tests {
                             b0: 0.0,
                             b1: 0.1,
                             b2: 0.2,
-                            a0: 1.0,
                             a1: 0.3,
                             a2: 0.4,
                         },
@@ -364,7 +363,6 @@ mod tests {
                                                     b0 = 0.0
                                                     b1 = 0.1
                                                     b2 = 0.2
-                                                    a0 = 1.0
                                                     a1 = 0.3
                                                     a2 = 0.4
                                                 }

@@ -112,23 +112,13 @@ pub async fn update_filter(
         params.push(q_val.to_string());
     }
 
-    if let Some(BiquadCoefficients {
-        b0,
-        b1,
-        b2,
-        a0,
-        a1,
-        a2,
-    }) = update.coeffs
-    {
+    if let Some(BiquadCoefficients { b0, b1, b2, a1, a2 }) = update.coeffs {
         params.push(format!(r#""{FILTER_PREFIX}{band_idx}:b0""#));
         params.push(b0.to_string());
         params.push(format!(r#""{FILTER_PREFIX}{band_idx}:b1""#));
         params.push(b1.to_string());
         params.push(format!(r#""{FILTER_PREFIX}{band_idx}:b2""#));
         params.push(b2.to_string());
-        params.push(format!(r#""{FILTER_PREFIX}{band_idx}:a0""#));
-        params.push(a0.to_string());
         params.push(format!(r#""{FILTER_PREFIX}{band_idx}:a1""#));
         params.push(a1.to_string());
         params.push(format!(r#""{FILTER_PREFIX}{band_idx}:a2""#));
