@@ -4,7 +4,7 @@ use crossterm::event::EventStream;
 use pw_eq::filter::Filter;
 use pw_eq::tui::App;
 use pw_eq::{FilterId, find_eq_node, use_eq};
-use pw_util::apo;
+use pw_util::apo::{self, FilterType};
 use pw_util::module::FILTER_PREFIX;
 use ratatui::Terminal;
 use ratatui::prelude::CrosstermBackend;
@@ -12,6 +12,7 @@ use std::backtrace::Backtrace;
 use std::collections::BTreeMap;
 use std::fs::File;
 use std::path::PathBuf;
+use std::str::FromStr;
 use tabled::Table;
 use tokio::fs;
 use tracing_subscriber::EnvFilter;
@@ -92,8 +93,79 @@ struct Use {
 struct Tui {
     /// Load a specific EQ profile on startup
     /// Currently supports .apo files only
-    #[arg(short, long)]
+    #[arg(short, long, conflicts_with = "preset")]
     load: Option<PathBuf>,
+    /// Apply a pre-existing preset filter configuration on startup
+    #[arg(short, long, conflicts_with = "load")]
+    preset: Option<Preset>,
+}
+
+#[derive(Clone)]
+enum Preset {
+    Flat { bands: usize },
+}
+
+impl FromStr for Preset {
+    type Err = anyhow::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let s = s.to_lowercase();
+        if let Some(num_str) = s.strip_prefix("flat") {
+            let bands = num_str
+                .trim_start_matches('-')
+                .parse::<usize>()
+                .with_context(|| format!("invalid flat preset number: {num_str}"))?;
+            if bands == 0 || bands > 31 {
+                return Err(anyhow::anyhow!(
+                    "flat preset bands must be between 1 and 31, got {bands}",
+                ));
+            }
+            Ok(Preset::Flat { bands })
+        } else {
+            Err(anyhow::anyhow!("unknown preset: {s}"))
+        }
+    }
+}
+
+impl Preset {
+    fn make_filters(&self) -> Vec<Filter> {
+        match self {
+            Preset::Flat { bands } => {
+                let n = *bands as f64;
+                let f_min = 50.0f64;
+                let f_max = 10000.0;
+
+                (0..*bands)
+                    .map(|i| {
+                        // Calculate frequency logarithmically
+                        let frequency = if *bands > 1 {
+                            f_min * (f_max / f_min).powf(i as f64 / (n - 1.0))
+                        } else {
+                            1000.0 // Default for a single band
+                        };
+
+                        // Calculate the octave distance between each band
+                        // log2(f_max / f_min) gives total octaves (~9.96 for 20-20k)
+                        let total_octaves = (f_max / f_min).log2();
+                        let octaves_per_band = total_octaves / (n - 1.0);
+
+                        // Calculate the ideal Q factor for this spacing
+                        // Formula: Q = sqrt(2^bandwidth) / (2^bandwidth - 1)
+                        let bandwidth = octaves_per_band;
+                        let q = 2f64.powf(bandwidth).sqrt() / (2f64.powf(bandwidth) - 1.0);
+
+                        Filter {
+                            frequency,
+                            q,
+                            filter_type: FilterType::Peaking,
+                            gain: 0.0,
+                            muted: false,
+                        }
+                    })
+                    .collect()
+            }
+        }
+    }
 }
 
 #[derive(Parser)]
@@ -150,19 +222,22 @@ async fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
-async fn run_tui(tui: Tui) -> anyhow::Result<()> {
+async fn run_tui(args: Tui) -> anyhow::Result<()> {
     let (panic_tx, panic_rx) = std::sync::mpsc::sync_channel(1);
     std::panic::set_hook(Box::new(move |info| {
         let backtrace = Backtrace::capture();
         let _ = panic_tx.send((info.to_string(), backtrace));
     }));
 
-    let filters = if let Some(apo_path) = tui.load {
-        let apo_config = apo::Config::parse_file(apo_path).await?;
-        // TODO preamp ignored
-        apo_config.filters.into_iter().map(Filter::from).collect()
-    } else {
-        vec![]
+    let filters = match (args.load, args.preset) {
+        (Some(_), Some(_)) => unreachable!("clap should prevent this case"),
+        (Some(apo_path), None) => {
+            let apo_config = apo::Config::parse_file(apo_path).await?;
+            // TODO preamp ignored
+            apo_config.filters.into_iter().map(Filter::from).collect()
+        }
+        (None, Some(preset)) => preset.make_filters(),
+        _ => vec![],
     };
 
     let term = Terminal::new(CrosstermBackend::new(std::io::stdout()))?;

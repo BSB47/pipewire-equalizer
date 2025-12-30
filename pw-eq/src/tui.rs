@@ -78,7 +78,7 @@ impl EqState {
                 .max(0.0),
             filters,
             selected_band: 0,
-            max_bands: 20,
+            max_bands: 31,
             view_mode: ViewMode::Normal,
             bypassed: false,
         }
