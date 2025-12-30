@@ -18,7 +18,7 @@ impl From<apo::Filter> for Filter {
             frequency: f.frequency,
             gain: f.gain,
             q: f.q,
-            filter_type: f.filter_type.into(),
+            filter_type: f.filter_type,
             muted: !f.enabled,
         }
     }

@@ -94,9 +94,9 @@ impl Module {
                 gain: filter.gain,
             };
             match filter.filter_type {
-                apo::FilterType::Peaking => NodeKind::Peaking { control },
-                apo::FilterType::LowShelf => NodeKind::LowShelf { control },
-                apo::FilterType::HighShelf => NodeKind::HighShelf { control },
+                FilterType::Peaking => NodeKind::Peaking { control },
+                FilterType::LowShelf => NodeKind::LowShelf { control },
+                FilterType::HighShelf => NodeKind::HighShelf { control },
             }
         });
 
@@ -244,16 +244,6 @@ pub enum FilterType {
     HighShelf,
 }
 
-impl From<apo::FilterType> for FilterType {
-    fn from(ft: apo::FilterType) -> Self {
-        match ft {
-            apo::FilterType::Peaking => FilterType::Peaking,
-            apo::FilterType::LowShelf => FilterType::LowShelf,
-            apo::FilterType::HighShelf => FilterType::HighShelf,
-        }
-    }
-}
-
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "PascalCase")]
 pub struct Control {
@@ -325,8 +315,10 @@ impl fmt::Display for SpaJson<'_> {
 #[cfg(test)]
 mod tests {
     use crate::{
-        apo::{self, FilterType},
-        module::{BiquadCoefficients, NodeKind, RateAndBiquadCoefficients, RawNodeConfig},
+        apo::{self},
+        module::{
+            BiquadCoefficients, FilterType, NodeKind, RateAndBiquadCoefficients, RawNodeConfig,
+        },
         to_spa_json,
     };
     use expect_test::expect;

@@ -4,6 +4,7 @@ use crossterm::event::EventStream;
 use pw_eq::filter::Filter;
 use pw_eq::tui::App;
 use pw_eq::{FilterId, find_eq_node, use_eq};
+use pw_util::apo;
 use pw_util::module::FILTER_PREFIX;
 use ratatui::Terminal;
 use ratatui::prelude::CrosstermBackend;
@@ -157,7 +158,7 @@ async fn run_tui(tui: Tui) -> anyhow::Result<()> {
     }));
 
     let filters = if let Some(apo_path) = tui.load {
-        let apo_config = pw_util::apo::parse_file(apo_path).await?;
+        let apo_config = apo::Config::parse_file(apo_path).await?;
         // TODO preamp ignored
         apo_config.filters.into_iter().map(Filter::from).collect()
     } else {
@@ -176,13 +177,13 @@ async fn run_tui(tui: Tui) -> anyhow::Result<()> {
 async fn create_eq(
     Create {
         name,
-        apo_path: apo,
+        apo_path,
         r#use: use_after,
         force,
     }: Create,
 ) -> anyhow::Result<()> {
     // Parse the .apo file
-    let apo_config = pw_util::apo::parse_file(apo).await?;
+    let apo_config = apo::Config::parse_file(apo_path).await?;
 
     // Generate the filter-chain config
     let config_content = pw_util::module::Config::from_apo(&name, &apo_config);

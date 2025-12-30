@@ -1,7 +1,7 @@
 use crate::{FilterId, UpdateFilter, filter::Filter, update_filters, use_eq};
 use std::{
-    backtrace::Backtrace, error::Error, io, mem, num::NonZero, ops::ControlFlow, pin::pin,
-    sync::mpsc::Receiver,
+    backtrace::Backtrace, error::Error, io, mem, num::NonZero, ops::ControlFlow, path::PathBuf,
+    pin::pin, sync::mpsc::Receiver,
 };
 
 use crossterm::{
@@ -11,6 +11,7 @@ use crossterm::{
 };
 use futures_util::{Stream, StreamExt as _};
 use pw_util::{
+    apo,
     module::{
         self, Control, FilterType, Module, ModuleArgs, NodeKind, ParamEqConfig, ParamEqFilter,
         RateAndBiquadCoefficients, RawNodeConfig,
@@ -29,6 +30,11 @@ use ratatui::{
 use tokio::sync::mpsc;
 
 use crate::pw::{self, pw_thread};
+
+pub enum Format {
+    PwParamEq,
+    Apo,
+}
 
 #[derive(Clone, Copy)]
 enum Rotation {
@@ -237,30 +243,56 @@ impl EqState {
     }
 
     /// Save current EQ configuration to a PipeWire filter-chain config file using param_eq
-    async fn save_config(&self, path: impl AsRef<std::path::Path>) -> anyhow::Result<()> {
-        let config = module::Config::from_kinds(
-            &self.name,
-            self.preamp,
-            [NodeKind::ParamEq {
-                config: ParamEqConfig {
-                    filters: self
-                        .filters
-                        .iter()
-                        .map(|band| ParamEqFilter {
-                            ty: band.filter_type,
-                            control: Control {
-                                freq: band.frequency,
-                                q: band.q,
-                                gain: band.gain,
-                            },
-                        })
-                        .collect(),
-                },
-            }],
-        );
+    async fn save_config(
+        &self,
+        path: impl AsRef<std::path::Path>,
+        format: Format,
+    ) -> anyhow::Result<()> {
+        let data = match format {
+            Format::PwParamEq => {
+                let config = module::Config::from_kinds(
+                    &self.name,
+                    self.preamp,
+                    [NodeKind::ParamEq {
+                        config: ParamEqConfig {
+                            filters: self
+                                .filters
+                                .iter()
+                                .map(|band| ParamEqFilter {
+                                    ty: band.filter_type,
+                                    control: Control {
+                                        freq: band.frequency,
+                                        q: band.q,
+                                        gain: band.gain,
+                                    },
+                                })
+                                .collect(),
+                        },
+                    }],
+                );
 
-        let spa_json = pw_util::to_spa_json(&config);
-        tokio::fs::write(path, spa_json).await?;
+                pw_util::to_spa_json(&config)
+            }
+            Format::Apo => apo::Config {
+                preamp: self.preamp,
+                filters: self
+                    .filters
+                    .iter()
+                    .enumerate()
+                    .map(|(i, filter)| apo::Filter {
+                        number: (i + 1) as u32,
+                        enabled: !filter.muted,
+                        filter_type: filter.filter_type,
+                        frequency: filter.frequency,
+                        gain: filter.gain,
+                        q: filter.q,
+                    })
+                    .collect(),
+            }
+            .to_string(),
+        };
+
+        tokio::fs::write(path, data).await?;
 
         Ok(())
     }
@@ -683,17 +715,25 @@ where
             ["q" | "quit"] => return Ok(ControlFlow::Break(())),
             ["w" | "write", args @ ..] => {
                 let path = match args {
-                    [path] => path.to_string(),
+                    [path] => PathBuf::from(path),
                     _ => {
                         self.status_error = Some("usage: write <path>".to_string());
                         return Ok(ControlFlow::Continue(()));
                     }
                 };
+
+                let format = match path.extension() {
+                    Some(ext) if ext == "apo" => Format::Apo,
+                    _ => Format::PwParamEq,
+                };
+
                 tokio::spawn({
                     let eq_state = self.eq_state.clone();
                     async move {
-                        match eq_state.save_config(&path).await {
-                            Ok(()) => tracing::info!(path, "EQ configuration saved"),
+                        match eq_state.save_config(&path, format).await {
+                            Ok(()) => {
+                                tracing::info!(path = %path.display(), "EQ configuration saved")
+                            }
                             Err(err) => {
                                 tracing::error!(error = %err, "failed to save EQ configuration");
                             }

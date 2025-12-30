@@ -1,13 +1,8 @@
 use anyhow::{Context, Result};
-use std::path::Path;
+use std::{fmt, path::Path, str::FromStr};
 use tokio::fs;
 
-#[derive(Debug, Copy, Clone, PartialEq)]
-pub enum FilterType {
-    Peaking,
-    LowShelf,
-    HighShelf,
-}
+pub use crate::module::FilterType;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Filter {
@@ -25,51 +20,78 @@ pub struct Config {
     pub filters: Vec<Filter>,
 }
 
-/// Parse an AutoEQ .apo file
-pub async fn parse_file(path: impl AsRef<Path>) -> Result<Config> {
-    let content = fs::read_to_string(path.as_ref())
-        .await
-        .context("Failed to read .apo file")?;
-
-    parse(&content)
+impl fmt::Display for Config {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        writeln!(f, "Preamp: {:.1} dB", self.preamp)?;
+        for filter in &self.filters {
+            writeln!(
+                f,
+                "Filter {}: {} {} Fc {:.1} Hz Gain {:.1} dB Q {:.6}",
+                filter.number,
+                if filter.enabled { "ON" } else { "OFF" },
+                match filter.filter_type {
+                    FilterType::Peaking => "PK",
+                    FilterType::LowShelf => "LSC",
+                    FilterType::HighShelf => "HSC",
+                },
+                filter.frequency,
+                filter.gain,
+                filter.q
+            )?;
+        }
+        Ok(())
+    }
 }
 
-/// Parse AutoEQ .apo format from a string
-pub fn parse(content: &str) -> Result<Config> {
-    let mut preamp = 0.0;
-    let mut filters = Vec::new();
+impl FromStr for Config {
+    type Err = anyhow::Error;
 
-    for line in content.lines() {
-        let line = line.trim();
+    fn from_str(content: &str) -> Result<Self> {
+        let mut preamp = 0.0;
+        let mut filters = Vec::new();
 
-        if line.is_empty() || line.starts_with('#') {
-            continue;
-        }
+        for line in content.lines() {
+            let line = line.trim();
 
-        // Parse preamp line: "Preamp: -1.9 dB"
-        if line.starts_with("Preamp:") {
-            if let Some(value_str) = line.split(':').nth(1) {
-                let value_str = value_str
-                    .trim()
-                    .trim_end_matches("dB")
-                    .trim_end_matches("db")
-                    .trim();
-                preamp = value_str
-                    .parse()
-                    .context(format!("Invalid preamp value: {}", value_str))?;
+            if line.is_empty() || line.starts_with('#') {
+                continue;
             }
-            continue;
+
+            // Parse preamp line: "Preamp: -1.9 dB"
+            if line.starts_with("Preamp:") {
+                if let Some(value_str) = line.split(':').nth(1) {
+                    let value_str = value_str
+                        .trim()
+                        .trim_end_matches("dB")
+                        .trim_end_matches("db")
+                        .trim();
+                    preamp = value_str
+                        .parse()
+                        .context(format!("Invalid preamp value: {}", value_str))?;
+                }
+                continue;
+            }
+
+            // Parse filter line: "Filter 1: ON PK Fc 46 Hz Gain 0.8 dB Q 2.9"
+            if line.starts_with("Filter")
+                && let Some(filter) = parse_filter_line(line)?
+            {
+                filters.push(filter);
+            }
         }
 
-        // Parse filter line: "Filter 1: ON PK Fc 46 Hz Gain 0.8 dB Q 2.9"
-        if line.starts_with("Filter")
-            && let Some(filter) = parse_filter_line(line)?
-        {
-            filters.push(filter);
-        }
+        Ok(Config { preamp, filters })
     }
+}
 
-    Ok(Config { preamp, filters })
+impl Config {
+    /// Parse an AutoEQ .apo file
+    pub async fn parse_file(path: impl AsRef<Path>) -> Result<Config> {
+        fs::read_to_string(path.as_ref())
+            .await
+            .context("Failed to read .apo file")?
+            .parse()
+    }
 }
 
 fn parse_filter_line(line: &str) -> Result<Option<Filter>> {
