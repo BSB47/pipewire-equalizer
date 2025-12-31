@@ -608,7 +608,7 @@ where
 
             KeyCode::Char(':') => self.enter_command_mode(),
             KeyCode::Char('?') => self.show_help = !self.show_help,
-            KeyCode::Char('w') => {
+            KeyCode::Char('s') => {
                 let buffer = format!(
                     "write $HOME/.config/pipewire/pipewire.conf.d/{}.conf",
                     self.eq.name
@@ -626,24 +626,30 @@ where
                 }
             }
 
-            KeyCode::Char('f') => self.eq.adjust_freq(|f| f * 1.025),
-            KeyCode::Char('F') => self.eq.adjust_freq(|f| f / 1.025),
+            KeyCode::Char('l') => self.eq.adjust_freq(|f| f * 1.0125),
+            KeyCode::Char('L') => self.eq.adjust_freq(|f| f * 1.1),
+            KeyCode::Char('h') => self.eq.adjust_freq(|f| f / 1.0125),
+            KeyCode::Char('H') => self.eq.adjust_freq(|f| f / 1.1),
 
             KeyCode::Char('g') => self.eq.adjust_gain(|g| g + 0.1),
             KeyCode::Char('G') => self.eq.adjust_gain(|g| g - 0.1),
 
-            KeyCode::Char('q') => self.eq.adjust_q(|q| q + 0.01),
-            KeyCode::Char('Q') => self.eq.adjust_q(|q| q - 0.01),
+            KeyCode::Char('r') => self.eq.adjust_q(|q| q + 0.01),
+            KeyCode::Char('R') => self.eq.adjust_q(|q| q + 0.1),
+            KeyCode::Char('w') => self.eq.adjust_q(|q| q - 0.01),
+            KeyCode::Char('W') => self.eq.adjust_q(|q| q - 0.1),
 
             KeyCode::Char('p' | '+') => self.eq.adjust_preamp(|p| p + 0.1),
             KeyCode::Char('P' | '-') => self.eq.adjust_preamp(|p| p - 0.1),
 
-            KeyCode::Tab => self.eq.cycle_filter_type(Rotation::Clockwise),
-            KeyCode::BackTab => self.eq.cycle_filter_type(Rotation::CounterClockwise),
+            KeyCode::Tab | KeyCode::Char('t') => self.eq.cycle_filter_type(Rotation::Clockwise),
+            KeyCode::BackTab | KeyCode::Char('T') => {
+                self.eq.cycle_filter_type(Rotation::CounterClockwise)
+            }
 
             KeyCode::Char('m') => self.eq.toggle_mute(),
 
-            KeyCode::Char('e') => self.eq.toggle_view_mode(),
+            KeyCode::Char('x') => self.eq.toggle_view_mode(),
 
             KeyCode::Char('b') => self.eq.toggle_bypass(),
 
@@ -941,7 +947,7 @@ where
                 }
                 InputMode::Normal if self.show_help => {
                     Paragraph::new(
-                        "j/k: select | STab: type | m: mute | b: bypass | e: expert | f/F: freq | g/G: gain | q/Q: Q | +/-: preamp | a: add | d: delete | 0: zero | :: command | ?: hide help"
+                        "j/k: select | STab: type | m: mute | b: bypass | x: expert | f/F: freq | g/G: gain | q/Q: Q | +/-: preamp | a: add | d: delete | 0: zero | :: command | ?: hide help"
                     )
                     .style(Style::default().fg(Color::DarkGray))
                 }
