@@ -644,8 +644,8 @@ where
             KeyCode::Char('q') => self.eq.adjust_q(|q| q + 0.01),
             KeyCode::Char('Q') => self.eq.adjust_q(|q| q - 0.01),
 
-            KeyCode::Char('p') => self.eq.adjust_preamp(|p| p + 0.1),
-            KeyCode::Char('P') => self.eq.adjust_preamp(|p| p - 0.1),
+            KeyCode::Char('p' | '+') => self.eq.adjust_preamp(|p| p + 0.1),
+            KeyCode::Char('P' | '-') => self.eq.adjust_preamp(|p| p - 0.1),
 
             KeyCode::Char('t') => self.eq.cycle_filter_type(Rotation::Clockwise),
             KeyCode::Char('T') => self.eq.cycle_filter_type(Rotation::CounterClockwise),
@@ -953,7 +953,7 @@ where
                 }
                 InputMode::Normal if self.show_help => {
                     Paragraph::new(
-                        "Tab/j/k: select | t: type | m: mute | b: bypass | e: expert | f/F: freq | g/G: gain | q/Q: Q | p/P: preamp | a: add | d: delete | 0: zero | :: command | ?: hide help"
+                        "Tab/j/k: select | t: type | m: mute | b: bypass | e: expert | f/F: freq | g/G: gain | q/Q: Q | +/-: preamp | a: add | d: delete | 0: zero | :: command | ?: hide help"
                     )
                     .style(Style::default().fg(Color::DarkGray))
                 }
