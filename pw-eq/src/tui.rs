@@ -464,6 +464,16 @@ where
             })
             .ok();
 
+        if self.eq.filters.iter().any(|band| {
+            use FilterType::*;
+            band.gain > 0.0 || matches!(band.filter_type, BandPass | Notch | HighPass | LowPass)
+        }) {
+            // Load module if any band is not a no-op.
+            // This is just a development convenience to avoid loading the module when starting
+            // unnecessarily as audio pauses when unloading the module.
+            self.load_module();
+        }
+
         let mut events = pin!(events.fuse());
 
         loop {
@@ -666,41 +676,43 @@ where
             _ => {}
         }
 
-        if let Some(node_id) = self.active_node_id
-            && before_preamp != self.eq.preamp
-        {
-            self.sync_preamp(node_id);
+        if let Some(node_id) = self.active_node_id {
+            if before_preamp != self.eq.preamp {
+                self.sync_preamp(node_id);
+            }
+
+            if self.eq.selected_band == before_idx
+                && self.eq.filters[self.eq.selected_band] != before_band
+            {
+                self.sync_filter(node_id, self.eq.selected_band, self.sample_rate);
+            }
+
+            if before_bypass != self.eq.bypassed {
+                // If bypass state changed, sync all bands
+                self.sync(node_id, self.sample_rate);
+            }
         }
 
-        if let Some(node_id) = self.active_node_id
-            && self.eq.selected_band == before_idx
-            && self.eq.filters[self.eq.selected_band] != before_band
-        {
-            self.sync_filter(node_id, self.eq.selected_band, self.sample_rate);
-        }
-
-        if let Some(node_id) = self.active_node_id
-            && before_bypass != self.eq.bypassed
-        {
-            // If bypass state changed, sync all bands
-            self.sync(node_id, self.sample_rate);
-        }
-
-        // Reload module if filter count changed (add/delete band), or if nothing is loaded yet
-        // Attempting to avoid loading no-op EQ as long as possible
+        // Load new module if filter count changed (add/delete band) because we cannot dynamically
+        // change the number of filters in the filter-chain module.
+        // Or if nothing is currently loaded.
         if before_filter_count != self.eq.filters.len() || self.active_node_id.is_none() {
             tracing::debug!(
                 old_filter_count = before_filter_count,
                 new_filter_count = self.eq.filters.len(),
-                "Loading module"
+                "Reloading pipewire module"
             );
-            let _ = self.pw_tx.send(pw::Message::LoadModule {
-                name: "libpipewire-module-filter-chain".into(),
-                args: Box::new(self.eq.to_module_args(self.sample_rate)),
-            });
+            self.load_module();
         }
 
         Ok(ControlFlow::Continue(()))
+    }
+
+    fn load_module(&mut self) {
+        let _ = self.pw_tx.send(pw::Message::LoadModule {
+            name: "libpipewire-module-filter-chain".into(),
+            args: Box::new(self.eq.to_module_args(self.sample_rate)),
+        });
     }
 
     fn enter_normal_mode(&mut self) {
