@@ -917,7 +917,7 @@ where
                     sample_rate
                 )),
                 Span::styled(
-                    format!("{:+.1} dB", eq_state.preamp),
+                    format!("{} dB", Gain(eq_state.preamp)),
                     Style::default().fg(preamp_color),
                 ),
             ];
@@ -1058,7 +1058,7 @@ where
                             Modifier::empty()
                         },
                     )),
-                    Cell::from(format!("{:+.1}", band.gain)).style(
+                    Cell::from(format!("{}", Gain(band.gain))).style(
                         Style::default().fg(final_gain_color).add_modifier(
                             if is_selected && !is_dimmed {
                                 Modifier::BOLD
@@ -1235,6 +1235,18 @@ impl<W: Backend + io::Write> Drop for App<W> {
             let mut stderr = io::stderr().lock();
             let _ = writeln!(stderr, "{panic}");
             let _ = writeln!(stderr, "{backtrace}");
+        }
+    }
+}
+
+struct Gain(f64);
+
+impl std::fmt::Display for Gain {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        if self.0.abs() < 0.05 {
+            write!(f, "0.0")
+        } else {
+            write!(f, "{:+.1}", self.0)
         }
     }
 }
