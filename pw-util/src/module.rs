@@ -272,7 +272,6 @@ pub enum FilterType {
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-#[serde(rename_all = "PascalCase")]
 pub struct Control {
     pub freq: f64,
     pub q: f64,
@@ -470,6 +469,8 @@ mod tests {
         ));
 
         // The preamp should be added into the param-eq node rather than using a separate node
+        //  Note the control casing is different to the when using bq_filters directly for some reason
+
         expect![[r#"
             {
                 context.modules = [
@@ -488,21 +489,21 @@ mod tests {
                                             filters = [
                                                 {
                                                     type = "bq_highshelf"
-                                                    Freq = 0.0
-                                                    Q = 0.0
-                                                    Gain = -4.2
+                                                    freq = 0.0
+                                                    q = 0.0
+                                                    gain = -4.2
                                                 }
                                                 {
                                                     type = "bq_lowshelf"
-                                                    Freq = 200.0
-                                                    Q = 0.707
-                                                    Gain = -6.0
+                                                    freq = 200.0
+                                                    q = 0.707
+                                                    gain = -6.0
                                                 }
                                                 {
                                                     type = "bq_peaking"
-                                                    Freq = 1000.0
-                                                    Q = 1.0
-                                                    Gain = 3.0
+                                                    freq = 1000.0
+                                                    q = 1.0
+                                                    gain = 3.0
                                                 }
                                             ]
                                         }
@@ -571,9 +572,9 @@ mod tests {
                                         name = "pweq.filter_preamp"
                                         label = "bq_highshelf"
                                         control = {
-                                            Freq = 0.0
-                                            Q = 0.0
-                                            Gain = -1.9
+                                            freq = 0.0
+                                            q = 0.0
+                                            gain = -1.9
                                         }
                                     }
                                     {
@@ -581,9 +582,9 @@ mod tests {
                                         name = "pweq.filter_1"
                                         label = "bq_peaking"
                                         control = {
-                                            Freq = 46.0
-                                            Q = 2.9
-                                            Gain = 0.8
+                                            freq = 46.0
+                                            q = 2.9
+                                            gain = 0.8
                                         }
                                     }
                                     {
@@ -591,9 +592,9 @@ mod tests {
                                         name = "pweq.filter_2"
                                         label = "bq_lowshelf"
                                         control = {
-                                            Freq = 105.0
-                                            Q = 0.667
-                                            Gain = -0.3
+                                            freq = 105.0
+                                            q = 0.667
+                                            gain = -0.3
                                         }
                                     }
                                 ]
