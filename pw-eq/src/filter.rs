@@ -85,6 +85,33 @@ impl Filter {
                 let a2 = (a + 1.0) - (a - 1.0) * cos_w0 - 2.0 * sqrt_a * alpha;
                 (b0, b1, b2, a0, a1, a2)
             }
+            FilterType::LowPass => {
+                let b0 = (1.0 - cos_w0) / 2.0;
+                let b1 = 1.0 - cos_w0;
+                let b2 = (1.0 - cos_w0) / 2.0;
+                let a0 = 1.0 + alpha;
+                let a1 = -2.0 * cos_w0;
+                let a2 = 1.0 - alpha;
+                (b0, b1, b2, a0, a1, a2)
+            }
+            FilterType::HighPass => {
+                let b0 = (1.0 + cos_w0) / 2.0;
+                let b1 = -(1.0 + cos_w0);
+                let b2 = (1.0 + cos_w0) / 2.0;
+                let a0 = 1.0 + alpha;
+                let a1 = -2.0 * cos_w0;
+                let a2 = 1.0 - alpha;
+                (b0, b1, b2, a0, a1, a2)
+            }
+            FilterType::BandPass => {
+                let b0 = alpha;
+                let b1 = 0.0;
+                let b2 = -alpha;
+                let a0 = 1.0 + alpha;
+                let a1 = -2.0 * cos_w0;
+                let a2 = 1.0 - alpha;
+                (b0, b1, b2, a0, a1, a2)
+            }
         };
 
         // Normalize by dividing all coefficients by a0

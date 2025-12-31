@@ -10,3 +10,4 @@ tokio = "1.48.0"
 serde = { version = "1.0.228" }
 serde_json = { version = "1.0.147", features = ["preserve_order"] }
 tracing = "0.1.44"
+strum = { version = "0.26", features = ["derive"] }

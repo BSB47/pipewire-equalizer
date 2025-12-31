@@ -124,6 +124,9 @@ impl Module {
                 FilterType::Peaking => NodeKind::Peaking { control },
                 FilterType::LowShelf => NodeKind::LowShelf { control },
                 FilterType::HighShelf => NodeKind::HighShelf { control },
+                FilterType::LowPass => NodeKind::LowPass { control },
+                FilterType::BandPass => NodeKind::BandPass { control },
+                FilterType::HighPass => NodeKind::HighPass { control },
             }
         });
 
@@ -213,6 +216,12 @@ pub enum NodeKind {
     LowShelf { control: Control },
     #[serde(rename = "bq_highshelf")]
     HighShelf { control: Control },
+    #[serde(rename = "bq_lowpass")]
+    LowPass { control: Control },
+    #[serde(rename = "bq_bandpass")]
+    BandPass { control: Control },
+    #[serde(rename = "bq_highpass")]
+    HighPass { control: Control },
     #[serde(rename = "bq_raw")]
     Raw { config: RawNodeConfig },
     #[serde(rename = "param_eq")]
@@ -261,12 +270,20 @@ pub enum NodeType {
     Builtin,
 }
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(
+    Debug, Copy, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize, strum::EnumIter,
+)]
 pub enum FilterType {
     #[serde(rename = "bq_lowshelf")]
     LowShelf,
+    #[serde(rename = "bq_lowpass")]
+    LowPass,
     #[serde(rename = "bq_peaking")]
     Peaking,
+    #[serde(rename = "bq_bandpass")]
+    BandPass,
+    #[serde(rename = "bq_highpass")]
+    HighPass,
     #[serde(rename = "bq_highshelf")]
     HighShelf,
 }

@@ -33,6 +33,9 @@ impl fmt::Display for Config {
                     FilterType::Peaking => "PK",
                     FilterType::LowShelf => "LSC",
                     FilterType::HighShelf => "HSC",
+                    FilterType::LowPass => "LPQ",
+                    FilterType::BandPass => "BP",
+                    FilterType::HighPass => "HPQ",
                 },
                 filter.frequency,
                 filter.gain,
@@ -73,9 +76,8 @@ impl FromStr for Config {
             }
 
             // Parse filter line: "Filter 1: ON PK Fc 46 Hz Gain 0.8 dB Q 2.9"
-            if line.starts_with("Filter")
-                && let Some(filter) = parse_filter_line(line)?
-            {
+            if line.starts_with("Filter") {
+                let filter = parse_filter_line(line)?;
                 filters.push(filter);
             }
         }
@@ -94,12 +96,10 @@ impl Config {
     }
 }
 
-fn parse_filter_line(line: &str) -> Result<Option<Filter>> {
+fn parse_filter_line(line: &str) -> Result<Filter> {
     // Split by ':'
     let parts: Vec<&str> = line.split(':').collect();
-    if parts.len() < 2 {
-        return Ok(None);
-    }
+    anyhow::ensure!(parts.len() >= 2, "Invalid filter line format: {}", line);
 
     // Extract filter number from "Filter 1"
     let number_str = parts[0].trim().trim_start_matches("Filter").trim();
@@ -112,21 +112,30 @@ fn parse_filter_line(line: &str) -> Result<Option<Filter>> {
     let tokens: Vec<&str> = params.split_whitespace().collect();
 
     // Check if enabled (ON/OFF)
-    let enabled = tokens.first().map(|&s| s == "ON").unwrap_or(false);
-    if !enabled {
-        return Ok(None);
-    }
+    let enabled = match tokens.first() {
+        Some(&"ON") => true,
+        Some(&"OFF") => false,
+        other => anyhow::bail!("Expected ON/OFF, got {:?}", other),
+    };
 
-    // Parse filter type (PK, LSC, HSC, etc.)
+    // Parse filter type - only support second-order filters with Q
     let filter_type = match tokens.get(1) {
+        Some(&"LS") => anyhow::bail!("Use LSC instead of LS"),
+        Some(&"LP") => anyhow::bail!("Use LPQ instead of LP"),
+        Some(&"HP") => anyhow::bail!("Use HPQ instead of HP"),
+        Some(&"HS") => anyhow::bail!("Use HSC instead of HS"),
+        Some(&"LSC") => FilterType::LowShelf,
+        Some(&"LPQ") => FilterType::LowPass,
         Some(&"PK") => FilterType::Peaking,
-        Some(&"LSC") | Some(&"LS") => FilterType::LowShelf,
-        Some(&"HSC") | Some(&"HS") => FilterType::HighShelf,
-        _ => return Ok(None),
+        Some(&"BP") => FilterType::BandPass,
+        Some(&"HPQ") => FilterType::HighPass,
+        Some(&"HSC") => FilterType::HighShelf,
+        Some(other) => anyhow::bail!("unknown filter type: {other}"),
+        None => anyhow::bail!("Missing filter type"),
     };
 
     // Parse parameters: Fc 46 Hz Gain 0.8 dB Q 2.9
-    let mut freq = 1000.0;
+    let mut frequency = 1000.0;
     let mut gain = 0.0;
     let mut q = 1.0;
 
@@ -135,7 +144,7 @@ fn parse_filter_line(line: &str) -> Result<Option<Filter>> {
         match tokens[i] {
             "Fc" => {
                 if let Some(&value_str) = tokens.get(i + 1) {
-                    freq = value_str
+                    frequency = value_str
                         .parse()
                         .context(format!("Invalid frequency: {}", value_str))?;
                     i += 3; // Skip "Fc 46 Hz"
@@ -167,14 +176,14 @@ fn parse_filter_line(line: &str) -> Result<Option<Filter>> {
         }
     }
 
-    Ok(Some(Filter {
+    Ok(Filter {
         number,
         enabled,
         filter_type,
-        frequency: freq,
+        frequency,
         gain,
         q,
-    }))
+    })
 }
 
 #[cfg(test)]
@@ -184,7 +193,7 @@ mod tests {
     #[test]
     fn test_parse_filter_line() {
         let line = "Filter 1: ON PK Fc 46 Hz Gain 0.8 dB Q 2.9";
-        let filter = parse_filter_line(line).unwrap().unwrap();
+        let filter = parse_filter_line(line).unwrap();
 
         assert_eq!(
             filter,
@@ -202,7 +211,7 @@ mod tests {
     #[test]
     fn test_parse_lowshelf() {
         let line = "Filter 3: ON LSC Fc 105 Hz Gain -0.3 dB Q 0.6666667";
-        let filter = parse_filter_line(line).unwrap().unwrap();
+        let filter = parse_filter_line(line).unwrap();
 
         assert_eq!(
             filter,

@@ -34,6 +34,7 @@ use ratatui::{
     text::{Line, Span},
     widgets::{Axis, Block, Borders, Cell, Chart, Dataset, GraphType, Paragraph, Row, Table},
 };
+use strum::IntoEnumIterator;
 use tokio::sync::mpsc;
 use tokio_stream::wrappers::ReceiverStream;
 
@@ -197,18 +198,16 @@ impl EqState {
     }
 
     fn cycle_filter_type(&mut self, rotation: Rotation) {
+        let types = FilterType::iter().collect::<Vec<_>>();
         if let Some(band) = self.filters.get_mut(self.selected_band) {
+            let idx = types
+                .iter()
+                .position(|&t| t == band.filter_type)
+                .expect("filter type must exist in enum");
+
             band.filter_type = match rotation {
-                Rotation::Clockwise => match band.filter_type {
-                    FilterType::Peaking => FilterType::HighShelf,
-                    FilterType::LowShelf => FilterType::Peaking,
-                    FilterType::HighShelf => FilterType::LowShelf,
-                },
-                Rotation::CounterClockwise => match band.filter_type {
-                    FilterType::Peaking => FilterType::LowShelf,
-                    FilterType::LowShelf => FilterType::HighShelf,
-                    FilterType::HighShelf => FilterType::Peaking,
-                },
+                Rotation::Clockwise => types[(idx + 1) % types.len()],
+                Rotation::CounterClockwise => types[(idx + types.len() - 1) % types.len()],
             };
         }
     }
@@ -691,10 +690,7 @@ where
 
         // Reload module if filter count changed (add/delete band), or if nothing is loaded yet
         // Attempting to avoid loading no-op EQ as long as possible
-        if before_filter_count != self.eq.filters.len()
-            || (self.active_node_id.is_none()
-                && (self.eq.filters.iter().any(|f| f.gain != 0.0) || self.eq.preamp != 0.0))
-        {
+        if before_filter_count != self.eq.filters.len() || self.active_node_id.is_none() {
             tracing::debug!(
                 old_filter_count = before_filter_count,
                 new_filter_count = self.eq.filters.len(),
@@ -986,14 +982,16 @@ where
                     format!("{:.0}", band.frequency)
                 };
 
-                // Format filter type
+                // Format filter type (following APO conventions)
                 let type_str = match band.filter_type {
+                    FilterType::LowShelf => "LSC",
+                    FilterType::LowPass => "LPQ",
                     FilterType::Peaking => "PK",
-                    FilterType::LowShelf => "LS",
-                    FilterType::HighShelf => "HS",
+                    FilterType::BandPass => "BP",
+                    FilterType::HighPass => "HPQ",
+                    FilterType::HighShelf => "HSC",
                 };
 
-                // Color-code the gain value
                 let gain_color = if band.gain > 0.05 {
                     Color::Green
                 } else if band.gain < -0.05 {
