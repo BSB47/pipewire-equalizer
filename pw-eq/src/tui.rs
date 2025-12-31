@@ -5,6 +5,7 @@ use std::{
 };
 
 use crossterm::{
+    cursor,
     event::{DisableMouseCapture, Event, KeyCode, KeyEvent, KeyModifiers},
     execute,
     terminal::{self, EnterAlternateScreen},
@@ -48,10 +49,10 @@ enum ViewMode {
     Expert,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 enum InputMode {
     Normal,
-    Command,
+    Command { buffer: String, cursor_pos: usize },
 }
 
 // EQ state
@@ -407,7 +408,6 @@ pub struct App<B: Backend + io::Write> {
     pw_handle: Option<std::thread::JoinHandle<io::Result<()>>>,
     sample_rate: u32,
     input_mode: InputMode,
-    command_buffer: String,
     show_help: bool,
     status_error: Option<String>,
 }
@@ -445,7 +445,6 @@ where
             // TODO query
             sample_rate: 48000,
             input_mode: InputMode::Normal,
-            command_buffer: String::new(),
             show_help: false,
             status_error: None,
         })
@@ -458,6 +457,7 @@ where
             DisableMouseCapture
         )?;
         terminal::enable_raw_mode()?;
+
         Ok(())
     }
 
@@ -465,6 +465,12 @@ where
         mut self,
         events: impl Stream<Item = io::Result<Event>>,
     ) -> anyhow::Result<()> {
+        execute!(
+            self.term.backend_mut(),
+            cursor::Show,
+            cursor::SetCursorStyle::SteadyBar,
+        )?;
+
         // Save the current default sink so we can restore it on exit
         self.original_default_sink = pw_util::get_default_audio_sink()
             .await
@@ -551,14 +557,14 @@ where
     fn handle_key(&mut self, key: KeyEvent) -> io::Result<ControlFlow<()>> {
         tracing::trace!(?key, mode = ?self.input_mode, "key event");
 
-        match self.input_mode {
+        match &self.input_mode {
             InputMode::Normal => self.handle_normal_key(key),
-            InputMode::Command => self.handle_command_key(key),
+            InputMode::Command { .. } => self.handle_command_key(key),
         }
     }
 
     fn handle_normal_key(&mut self, key: KeyEvent) -> io::Result<ControlFlow<()>> {
-        assert!(self.input_mode == InputMode::Normal);
+        assert!(matches!(self.input_mode, InputMode::Normal));
         let before_idx = self.eq_state.selected_band;
         let before_band = self.eq_state.filters[self.eq_state.selected_band];
         let before_preamp = self.eq_state.preamp;
@@ -571,23 +577,17 @@ where
                 return Ok(ControlFlow::Break(()));
             }
 
-            // Enter command mode
-            KeyCode::Char(':') => {
-                self.input_mode = InputMode::Command;
-                self.command_buffer.clear();
-                self.status_error = None;
-            }
-            // Toggle help
+            KeyCode::Char(':') => self.enter_command_mode(),
             KeyCode::Char('?') => self.show_help = !self.show_help,
             KeyCode::Char('w') => {
-                self.input_mode = InputMode::Command;
-                self.command_buffer = format!(
+                let buffer = format!(
                     "write $HOME/.config/pipewire/pipewire.conf.d/{}.conf",
                     self.eq_state.name
                 );
+                let cursor_pos = buffer.len();
+                self.input_mode = InputMode::Command { buffer, cursor_pos };
             }
 
-            // Navigation
             KeyCode::Tab | KeyCode::Char('j') => self.eq_state.select_next_band(),
             KeyCode::BackTab | KeyCode::Char('k') => self.eq_state.select_prev_band(),
             KeyCode::Char(c @ '1'..='9') => {
@@ -673,11 +673,20 @@ where
 
     fn enter_normal_mode(&mut self) {
         self.input_mode = InputMode::Normal;
-        self.command_buffer.clear();
+    }
+
+    fn enter_command_mode(&mut self) {
+        self.input_mode = InputMode::Command {
+            buffer: String::new(),
+            cursor_pos: 0,
+        };
+        self.status_error = None;
     }
 
     fn handle_command_key(&mut self, key: KeyEvent) -> io::Result<ControlFlow<()>> {
-        assert!(self.input_mode == InputMode::Command);
+        let InputMode::Command { buffer, cursor_pos } = &mut self.input_mode else {
+            panic!("handle_command_key called in non-command mode");
+        };
 
         match key.code {
             KeyCode::Esc => self.enter_normal_mode(),
@@ -685,14 +694,30 @@ where
                 self.enter_normal_mode()
             }
             KeyCode::Enter => {
-                let command = mem::take(&mut self.command_buffer);
-                self.enter_normal_mode();
-                return self.execute_command(&command);
+                let InputMode::Command { buffer, .. } =
+                    mem::replace(&mut self.input_mode, InputMode::Normal)
+                else {
+                    unreachable!();
+                };
+                return self.execute_command(&buffer);
             }
             KeyCode::Backspace => {
-                self.command_buffer.pop();
+                if *cursor_pos > 0 {
+                    buffer.remove(*cursor_pos - 1);
+                    *cursor_pos -= 1;
+                }
             }
-            KeyCode::Char(c) => self.command_buffer.push(c),
+            KeyCode::Delete => {
+                buffer.remove(*cursor_pos);
+            }
+            KeyCode::Left => *cursor_pos = cursor_pos.saturating_sub(1),
+            KeyCode::Right => *cursor_pos = (*cursor_pos + 1).min(buffer.len()),
+            KeyCode::Home => *cursor_pos = 0,
+            KeyCode::End => *cursor_pos = buffer.len(),
+            KeyCode::Char(c) => {
+                buffer.insert(*cursor_pos, c);
+                *cursor_pos += 1;
+            }
             _ => {}
         }
 
@@ -813,9 +838,9 @@ where
             Self::draw_frequency_response(f, chunks[2], eq_state, sample_rate);
 
             // Footer: Status message, Command line, or Help
-            let footer = match self.input_mode {
-                InputMode::Command => {
-                    Paragraph::new(format!(":{}", self.command_buffer))
+            let footer = match &self.input_mode {
+                InputMode::Command { buffer, .. } => {
+                    Paragraph::new(format!(":{}", buffer))
                 }
                 InputMode::Normal if self.status_error.is_some() => {
                     Paragraph::new(self.status_error.as_ref().unwrap().as_str())
@@ -833,6 +858,10 @@ where
                 }
             };
             f.render_widget(footer, chunks[3]);
+
+            if let InputMode::Command { cursor_pos, .. } = &self.input_mode {
+                f.set_cursor_position((chunks[3].x + 1 + *cursor_pos as u16, chunks[3].y));
+            }
         })?;
         Ok(())
     }
