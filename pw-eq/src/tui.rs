@@ -330,44 +330,6 @@ impl EqState {
         }
     }
 
-    fn apply_updates(
-        &self,
-        node_id: u32,
-        updates: impl IntoIterator<Item = (FilterId, UpdateFilter), IntoIter: Send> + Send + 'static,
-    ) {
-        tokio::spawn(async move {
-            if let Err(err) = update_filters(node_id, updates).await {
-                tracing::error!(error = %err, "failed to apply filter updates");
-            }
-        });
-    }
-
-    /// Sync preamp gain to PipeWire
-    fn sync_preamp(&self, node_id: u32) {
-        let update = self.build_preamp_update();
-        self.apply_updates(node_id, [(FilterId::Preamp, update)]);
-    }
-
-    /// Sync a specific filter band to PipeWire
-    fn sync_filter(&self, node_id: u32, band_idx: usize, sample_rate: u32) {
-        let band_id = FilterId::Index(NonZero::new(band_idx + 1).unwrap());
-        let update = self.build_filter_update(band_idx, sample_rate);
-        self.apply_updates(node_id, [(band_id, update)]);
-    }
-
-    fn sync(&self, node_id: u32, sample_rate: u32) {
-        let mut updates = Vec::with_capacity(self.filters.len() + 1);
-
-        updates.push((FilterId::Preamp, self.build_preamp_update()));
-
-        for idx in 0..self.filters.len() {
-            let id = FilterId::Index(NonZero::new(idx + 1).unwrap());
-            updates.push((id, self.build_filter_update(idx, sample_rate)));
-        }
-
-        self.apply_updates(node_id, updates);
-    }
-
     /// Generate frequency response curve data for visualization
     /// Returns Vec of (frequency, magnitude_db) pairs
     fn frequency_response_curve(&self, num_points: usize, sample_rate: f64) -> Vec<(f64, f64)> {
@@ -404,7 +366,7 @@ pub enum Notif {
     Error(anyhow::Error),
 }
 
-pub type TaskResult = Result<String, String>;
+pub type TaskResult = Result<Option<String>, String>;
 pub type Task = BoxFuture<'static, TaskResult>;
 
 pub struct App<B: Backend + io::Write> {
@@ -414,7 +376,7 @@ pub struct App<B: Backend + io::Write> {
     task_tx: mpsc::Sender<Task>,
     pw_tx: pipewire::channel::Sender<pw::Message>,
     panic_rx: Receiver<(String, Backtrace)>,
-    eq_state: EqState,
+    eq: EqState,
     active_node_id: Option<u32>,
     original_default_sink: Option<u32>,
     pw_handle: Option<std::thread::JoinHandle<io::Result<()>>>,
@@ -458,7 +420,7 @@ where
             notifs,
             tasks,
             task_tx,
-            eq_state,
+            eq: eq_state,
             active_node_id: None,
             original_default_sink: None,
             pw_handle: Some(pw_handle),
@@ -523,7 +485,11 @@ where
                     }
                 }
                 Some(notif) = self.notifs.recv() => self.on_notif(notif).await,
-                result = self.tasks.select_next_some() => self.status = Some(result),
+                result = self.tasks.select_next_some() => match result {
+                    Ok(Some(status)) => self.status = Some(Ok(status)),
+                    Ok(None) => {}
+                    Err(err) => self.status = Some(Err(err)),
+                }
             }
         }
 
@@ -569,7 +535,7 @@ where
 
                 if reused {
                     // If the module was reused, it may have stale filter settings
-                    self.eq_state.sync(node_id, self.sample_rate);
+                    self.sync(node_id, self.sample_rate);
                 }
 
                 self.active_node_id = Some(node_id);
@@ -578,6 +544,45 @@ where
                 tracing::error!(error = &*err, "PipeWire error");
             }
         }
+    }
+
+    fn apply_updates(
+        &self,
+        node_id: u32,
+        updates: impl IntoIterator<Item = (FilterId, UpdateFilter), IntoIter: Send> + Send + 'static,
+    ) {
+        self.schedule(async move {
+            match update_filters(node_id, updates).await {
+                Ok(()) => Ok(None),
+                Err(err) => Err(err.to_string()),
+            }
+        });
+    }
+
+    /// Sync preamp gain to PipeWire
+    fn sync_preamp(&self, node_id: u32) {
+        let update = self.eq.build_preamp_update();
+        self.apply_updates(node_id, [(FilterId::Preamp, update)]);
+    }
+
+    /// Sync a specific filter band to PipeWire
+    fn sync_filter(&self, node_id: u32, band_idx: usize, sample_rate: u32) {
+        let band_id = FilterId::Index(NonZero::new(band_idx + 1).unwrap());
+        let update = self.eq.build_filter_update(band_idx, sample_rate);
+        self.apply_updates(node_id, [(band_id, update)]);
+    }
+
+    fn sync(&self, node_id: u32, sample_rate: u32) {
+        let mut updates = Vec::with_capacity(self.eq.filters.len() + 1);
+
+        updates.push((FilterId::Preamp, self.eq.build_preamp_update()));
+
+        for idx in 0..self.eq.filters.len() {
+            let id = FilterId::Index(NonZero::new(idx + 1).unwrap());
+            updates.push((id, self.eq.build_filter_update(idx, sample_rate)));
+        }
+
+        self.apply_updates(node_id, updates);
     }
 
     fn handle_event(&mut self, event: Event) -> io::Result<ControlFlow<()>> {
@@ -598,11 +603,11 @@ where
 
     fn handle_normal_key(&mut self, key: KeyEvent) -> io::Result<ControlFlow<()>> {
         assert!(matches!(self.input_mode, InputMode::Normal));
-        let before_idx = self.eq_state.selected_band;
-        let before_band = self.eq_state.filters[self.eq_state.selected_band];
-        let before_preamp = self.eq_state.preamp;
-        let before_bypass = self.eq_state.bypassed;
-        let before_filter_count = self.eq_state.filters.len();
+        let before_idx = self.eq.selected_band;
+        let before_band = self.eq.filters[self.eq.selected_band];
+        let before_preamp = self.eq.preamp;
+        let before_bypass = self.eq.bypassed;
+        let before_filter_count = self.eq.filters.len();
 
         match key.code {
             KeyCode::Esc => self.status = None,
@@ -615,48 +620,48 @@ where
             KeyCode::Char('w') => {
                 let buffer = format!(
                     "write $HOME/.config/pipewire/pipewire.conf.d/{}.conf",
-                    self.eq_state.name
+                    self.eq.name
                 );
                 let cursor_pos = buffer.len();
                 self.input_mode = InputMode::Command { buffer, cursor_pos };
             }
 
-            KeyCode::Tab | KeyCode::Char('j') => self.eq_state.select_next_band(),
-            KeyCode::BackTab | KeyCode::Char('k') => self.eq_state.select_prev_band(),
+            KeyCode::Tab | KeyCode::Char('j') => self.eq.select_next_band(),
+            KeyCode::BackTab | KeyCode::Char('k') => self.eq.select_prev_band(),
             KeyCode::Char(c @ '1'..='9') => {
                 let idx = c.to_digit(10).unwrap() as usize - 1;
-                if idx < self.eq_state.filters.len() {
-                    self.eq_state.selected_band = idx;
+                if idx < self.eq.filters.len() {
+                    self.eq.selected_band = idx;
                 }
             }
 
-            KeyCode::Char('f') => self.eq_state.adjust_freq(|f| f * 1.025),
-            KeyCode::Char('F') => self.eq_state.adjust_freq(|f| f / 1.025),
+            KeyCode::Char('f') => self.eq.adjust_freq(|f| f * 1.025),
+            KeyCode::Char('F') => self.eq.adjust_freq(|f| f / 1.025),
 
-            KeyCode::Char('g') => self.eq_state.adjust_gain(|g| g + 0.1),
-            KeyCode::Char('G') => self.eq_state.adjust_gain(|g| g - 0.1),
+            KeyCode::Char('g') => self.eq.adjust_gain(|g| g + 0.1),
+            KeyCode::Char('G') => self.eq.adjust_gain(|g| g - 0.1),
 
-            KeyCode::Char('q') => self.eq_state.adjust_q(|q| q + 0.01),
-            KeyCode::Char('Q') => self.eq_state.adjust_q(|q| q - 0.01),
+            KeyCode::Char('q') => self.eq.adjust_q(|q| q + 0.01),
+            KeyCode::Char('Q') => self.eq.adjust_q(|q| q - 0.01),
 
-            KeyCode::Char('p') => self.eq_state.adjust_preamp(|p| p + 0.1),
-            KeyCode::Char('P') => self.eq_state.adjust_preamp(|p| p - 0.1),
+            KeyCode::Char('p') => self.eq.adjust_preamp(|p| p + 0.1),
+            KeyCode::Char('P') => self.eq.adjust_preamp(|p| p - 0.1),
 
-            KeyCode::Char('t') => self.eq_state.cycle_filter_type(Rotation::Clockwise),
-            KeyCode::Char('T') => self.eq_state.cycle_filter_type(Rotation::CounterClockwise),
+            KeyCode::Char('t') => self.eq.cycle_filter_type(Rotation::Clockwise),
+            KeyCode::Char('T') => self.eq.cycle_filter_type(Rotation::CounterClockwise),
 
-            KeyCode::Char('m') => self.eq_state.toggle_mute(),
+            KeyCode::Char('m') => self.eq.toggle_mute(),
 
-            KeyCode::Char('e') => self.eq_state.toggle_view_mode(),
+            KeyCode::Char('e') => self.eq.toggle_view_mode(),
 
-            KeyCode::Char('b') => self.eq_state.toggle_bypass(),
+            KeyCode::Char('b') => self.eq.toggle_bypass(),
 
             // Band management
-            KeyCode::Char('a') => self.eq_state.add_band(),
-            KeyCode::Char('d') => self.eq_state.delete_selected_band(),
+            KeyCode::Char('a') => self.eq.add_band(),
+            KeyCode::Char('d') => self.eq.delete_selected_band(),
             KeyCode::Char('0') => {
                 // Zero the gain on current band
-                if let Some(band) = self.eq_state.filters.get_mut(self.eq_state.selected_band) {
+                if let Some(band) = self.eq.filters.get_mut(self.eq.selected_band) {
                     band.gain = 0.0;
                 }
             }
@@ -665,39 +670,39 @@ where
         }
 
         if let Some(node_id) = self.active_node_id
-            && before_preamp != self.eq_state.preamp
+            && before_preamp != self.eq.preamp
         {
-            self.eq_state.sync_preamp(node_id);
+            self.sync_preamp(node_id);
         }
 
         if let Some(node_id) = self.active_node_id
-            && self.eq_state.selected_band == before_idx
-            && self.eq_state.filters[self.eq_state.selected_band] != before_band
+            && self.eq.selected_band == before_idx
+            && self.eq.filters[self.eq.selected_band] != before_band
         {
-            self.eq_state
-                .sync_filter(node_id, self.eq_state.selected_band, self.sample_rate);
+            self.sync_filter(node_id, self.eq.selected_band, self.sample_rate);
         }
 
         if let Some(node_id) = self.active_node_id
-            && before_bypass != self.eq_state.bypassed
+            && before_bypass != self.eq.bypassed
         {
             // If bypass state changed, sync all bands
-            self.eq_state.sync(node_id, self.sample_rate);
+            self.sync(node_id, self.sample_rate);
         }
 
         // Reload module if filter count changed (add/delete band), or if nothing is loaded yet
-        if before_filter_count != self.eq_state.filters.len()
+        // Attempting to avoid loading no-op EQ as long as possible
+        if before_filter_count != self.eq.filters.len()
             || (self.active_node_id.is_none()
-                && self.eq_state.filters.iter().any(|f| f.gain != 0.0))
+                && (self.eq.filters.iter().any(|f| f.gain != 0.0) || self.eq.preamp != 0.0))
         {
             tracing::debug!(
                 old_filter_count = before_filter_count,
-                new_filter_count = self.eq_state.filters.len(),
+                new_filter_count = self.eq.filters.len(),
                 "Loading module"
             );
             let _ = self.pw_tx.send(pw::Message::LoadModule {
                 name: "libpipewire-module-filter-chain".into(),
-                args: Box::new(self.eq_state.to_module_args(self.sample_rate)),
+                args: Box::new(self.eq.to_module_args(self.sample_rate)),
             });
         }
 
@@ -864,12 +869,12 @@ where
                 }
 
                 self.schedule({
-                    let eq_state = self.eq_state.clone();
+                    let eq_state = self.eq.clone();
                     let path = path.clone();
                     async move {
                         match eq_state.save_config(&path, format).await {
-                            Ok(()) => Ok(format!("Saved to {}", path.display())),
-                            Err(err) => Err(format!("Failed to save: {err}")),
+                            Ok(()) => Ok(Some(format!("Saved to {}", path.display()))),
+                            Err(err) => Err(err.to_string()),
                         }
                     }
                 });
@@ -881,7 +886,7 @@ where
     }
 
     fn draw(&mut self) -> anyhow::Result<()> {
-        let eq_state = &self.eq_state;
+        let eq_state = &self.eq;
         let sample_rate = self.sample_rate;
         self.term.draw(|f| {
             let chunks = Layout::default()
