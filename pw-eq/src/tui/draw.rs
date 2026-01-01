@@ -6,7 +6,9 @@ use ratatui::{
     style::{Color, Modifier, Style},
     symbols::Marker,
     text::{Line, Span},
-    widgets::{Axis, Block, Borders, Cell, Chart, Dataset, GraphType, Paragraph, Row, Table, Wrap},
+    widgets::{
+        Axis, Block, Borders, Cell, Chart, Dataset, GraphType, Padding, Paragraph, Row, Table, Wrap,
+    },
 };
 use std::io;
 
@@ -86,8 +88,11 @@ where
                 ));
             }
 
-            let header = Paragraph::new(Line::from(header_spans))
-                .block(Block::default().borders(Borders::ALL));
+            let header = Paragraph::new(Line::from(header_spans)).block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .border_style(Style::default().fg(theme.border)),
+            );
             f.render_widget(header, chunks[0]);
 
             draw_filters_table(f, chunks[1], eq, view_mode, sample_rate, theme);
@@ -304,9 +309,11 @@ fn draw_filters_table(
         ]
     };
 
-    let table = Table::new(rows, widths)
-        .header(header)
-        .block(Block::default().borders(Borders::ALL));
+    let table = Table::new(rows, widths).header(header).block(
+        Block::default()
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(theme.border)),
+    );
 
     f.render_widget(table, area);
 }
@@ -354,14 +361,14 @@ fn draw_frequency_response(
 
     let x_axis = Axis::default()
         .title("Frequency")
-        .style(Style::default().fg(Color::Gray))
+        .style(Style::default().fg(theme.border))
         .bounds([log_min, log_max])
         .labels(vec!["20Hz".to_string(), "20kHz".to_string()]);
 
     // Y-axis: dB scale
     let y_axis = Axis::default()
         .title("Gain (dB)")
-        .style(Style::default().fg(Color::Gray))
+        .style(Style::default().fg(theme.border))
         .bounds([min_db - 1.0, max_db + 1.0])
         .labels(vec![
             format!("{:.1}", min_db),
@@ -371,7 +378,11 @@ fn draw_frequency_response(
 
     let chart = Chart::new(vec![dataset])
         .style(Style::default().bg(theme.background))
-        .block(Block::default().borders(Borders::ALL))
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(theme.border)),
+        )
         .x_axis(x_axis)
         .y_axis(y_axis);
 

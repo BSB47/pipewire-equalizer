@@ -24,6 +24,7 @@ pub(crate) struct Theme {
     pub status_ok: Color,
     pub status_error: Color,
     pub chart: Color,
+    pub border: Color,
 }
 
 impl Default for Theme {
@@ -56,6 +57,7 @@ impl Theme {
             status_ok: Color::Rgb(0x83, 0x94, 0x96),
             status_error: Color::Rgb(0xdc, 0x32, 0x2f),
             chart: Color::Rgb(0x2a, 0xa1, 0x98),
+            border: Color::Rgb(0x58, 0x6e, 0x75), // base01
         }
     }
 }
