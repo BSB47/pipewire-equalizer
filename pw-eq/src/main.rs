@@ -278,7 +278,21 @@ async fn run_tui(args: TuiArgs) -> anyhow::Result<()> {
     };
 
     let term = ratatui::init();
-    let config = tui::Config::default();
+
+    let base_config = tui::Config::default();
+    let user_config_path = dirs::config_dir().unwrap().join("pw-eq/config.json");
+    let config = if user_config_path.exists() {
+        tracing::info!(
+            path = %user_config_path.display(),
+            "loading user configuration",
+        );
+        let file = fs::File::open(user_config_path).await?;
+        let config = serde_json::from_reader::<_, tui::Config>(file.try_into_std().unwrap())?;
+        base_config.merge(config)
+    } else {
+        base_config
+    };
+
     let mut app = tui::App::new(term, config, filters)?;
     app.enter()?;
 

@@ -44,6 +44,15 @@ where
             .into_iter()
             .flat_map(|mode_map| mode_map.iter())
     }
+
+    pub fn merge(&mut self, other: KeyMap<M, K, V>) {
+        for (mode, mode_map) in other.bindings {
+            let entry = self.bindings.entry(mode).or_default();
+            for (key, value) in mode_map {
+                entry.insert(key, value);
+            }
+        }
+    }
 }
 
 pub trait Action {}

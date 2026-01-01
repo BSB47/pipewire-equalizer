@@ -110,6 +110,17 @@ pub struct App<B: Backend + io::Write> {
 pub struct Config {
     keymap: KeyMap<InputMode, zi_input::KeyEvent, Action>,
 }
+impl Config {
+    /// Right-biased in-place merge of two configs
+    pub fn merge(mut self, config: Config) -> Self {
+        self.keymap.merge(config.keymap);
+
+        // Written in this way to make sure we don't forget to merge new fields later
+        Self {
+            keymap: self.keymap,
+        }
+    }
+}
 
 impl Default for Config {
     fn default() -> Self {
