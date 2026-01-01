@@ -13,7 +13,6 @@ use core::borrow::Borrow;
 use core::fmt::{self, Debug};
 use core::hash::{Hash, Hasher};
 use core::iter::FusedIterator;
-use core::mem;
 use core::ops;
 use serde::de;
 use std::string::String;
@@ -142,7 +141,7 @@ impl Map<String, Value> {
         String: Borrow<Q>,
         Q: ?Sized + Ord + Eq + Hash,
     {
-        return self.map.swap_remove(key);
+        self.map.swap_remove(key)
     }
 
     /// Removes a key from the map, returning the stored key and value if the
@@ -162,7 +161,7 @@ impl Map<String, Value> {
         String: Borrow<Q>,
         Q: ?Sized + Ord + Eq + Hash,
     {
-        return self.swap_remove_entry(key);
+        self.swap_remove_entry(key)
     }
 
     /// Removes and returns the value corresponding to the key from the map.
@@ -232,13 +231,12 @@ impl Map<String, Value> {
     /// Moves all elements from other into self, leaving other empty.
     #[inline]
     pub fn append(&mut self, other: &mut Self) {
-        self.map
-            .extend(mem::replace(&mut other.map, MapImpl::default()));
+        self.map.extend(std::mem::take(&mut other.map));
     }
 
     /// Gets the given key's corresponding entry in the map for in-place
     /// manipulation.
-    pub fn entry<S>(&mut self, key: S) -> Entry
+    pub fn entry<S>(&mut self, key: S) -> Entry<'_>
     where
         S: Into<String>,
     {
@@ -264,7 +262,7 @@ impl Map<String, Value> {
 
     /// Gets an iterator over the entries of the map.
     #[inline]
-    pub fn iter(&self) -> Iter {
+    pub fn iter(&self) -> Iter<'_> {
         Iter {
             iter: self.map.iter(),
         }
@@ -272,7 +270,7 @@ impl Map<String, Value> {
 
     /// Gets a mutable iterator over the entries of the map.
     #[inline]
-    pub fn iter_mut(&mut self) -> IterMut {
+    pub fn iter_mut(&mut self) -> IterMut<'_> {
         IterMut {
             iter: self.map.iter_mut(),
         }
@@ -280,7 +278,7 @@ impl Map<String, Value> {
 
     /// Gets an iterator over the keys of the map.
     #[inline]
-    pub fn keys(&self) -> Keys {
+    pub fn keys(&self) -> Keys<'_> {
         Keys {
             iter: self.map.keys(),
         }
@@ -288,7 +286,7 @@ impl Map<String, Value> {
 
     /// Gets an iterator over the values of the map.
     #[inline]
-    pub fn values(&self) -> Values {
+    pub fn values(&self) -> Values<'_> {
         Values {
             iter: self.map.values(),
         }
@@ -296,7 +294,7 @@ impl Map<String, Value> {
 
     /// Gets an iterator over mutable values of the map.
     #[inline]
-    pub fn values_mut(&mut self) -> ValuesMut {
+    pub fn values_mut(&mut self) -> ValuesMut<'_> {
         ValuesMut {
             iter: self.map.values_mut(),
         }
@@ -891,7 +889,7 @@ impl<'a> OccupiedEntry<'a> {
     /// ```
     #[inline]
     pub fn remove(self) -> Value {
-        return self.swap_remove();
+        self.swap_remove()
     }
 
     /// Takes the value of the entry out of the map, and returns it.
@@ -949,7 +947,7 @@ impl<'a> OccupiedEntry<'a> {
     /// ```
     #[inline]
     pub fn remove_entry(self) -> (String, Value) {
-        return self.swap_remove_entry();
+        self.swap_remove_entry()
     }
 
     /// Removes the entry from the map, returning the stored key and value.

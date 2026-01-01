@@ -1280,18 +1280,14 @@ impl<'de> Visitor<'de> for KeyClassifier {
     where
         E: de::Error,
     {
-        match s {
-            _ => Ok(KeyClass::Map(s.to_owned())),
-        }
+        Ok(KeyClass::Map(s.to_owned()))
     }
 
     fn visit_string<E>(self, s: String) -> Result<Self::Value, E>
     where
         E: de::Error,
     {
-        match s.as_str() {
-            _ => Ok(KeyClass::Map(s)),
-        }
+        Ok(KeyClass::Map(s))
     }
 }
 
@@ -1305,7 +1301,7 @@ impl Value {
     }
 
     #[cold]
-    fn unexpected(&self) -> Unexpected {
+    fn unexpected(&self) -> Unexpected<'_> {
         match self {
             Value::Null => Unexpected::Unit,
             Value::Bool(b) => Unexpected::Bool(*b),

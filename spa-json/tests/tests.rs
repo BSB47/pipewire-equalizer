@@ -53,13 +53,24 @@ fn test() {
 
 proptest! {
     #[test]
-    fn test_roundtrip(value in arb_v()) {
-        let s = spa_json::to_string(&value).unwrap();
+    fn test_roundtrip_pretty(value in arb_v()) {
+        let s = spa_json::to_string_pretty(&value).unwrap();
         let v2: Value = spa_json::from_str(&s).unwrap();
-        prop_assert_eq!(value, v2);
+        prop_assert_eq!(&value, &v2);
 
         let s_pretty = spa_json::to_string_pretty(&value).unwrap();
         let v3: Value = spa_json::from_str(&s_pretty).unwrap();
+        prop_assert_eq!(value, v3);
+    }
+
+    #[test]
+    fn test_roundtrip_compact(value in arb_v()) {
+        let s = spa_json::to_string(&value).unwrap();
+        let v2: Value = spa_json::from_str(&s).unwrap();
+        prop_assert_eq!(&value, &v2);
+
+        let s_compact = spa_json::to_string(&value).unwrap();
+        let v3: Value = spa_json::from_str(&s_compact).unwrap();
         prop_assert_eq!(value, v3);
     }
 }
