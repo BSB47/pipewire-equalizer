@@ -1487,6 +1487,7 @@ dependencies = [
  "pipewire-sys",
  "serde",
  "serde_json",
+ "spa-json",
  "strum 0.26.3",
  "tokio",
 ]

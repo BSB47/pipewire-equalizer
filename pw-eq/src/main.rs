@@ -6,7 +6,7 @@ use pw_eq::filter::Filter;
 use pw_eq::tui;
 use pw_eq::{FilterId, find_eq_node, use_eq};
 use pw_util::apo::{self, FilterType};
-use pw_util::module::FILTER_PREFIX;
+use pw_util::module::{self, FILTER_PREFIX};
 use std::collections::BTreeMap;
 use std::fs::File;
 use std::io::BufReader;
@@ -91,11 +91,11 @@ struct UseArgs {
 #[derive(Parser)]
 struct TuiArgs {
     /// Load a specific EQ profile on startup
-    /// Currently supports .apo files only
+    /// Currently supports .apo and .conf pipewire module files
     #[arg(short, long, conflicts_with = "preset")]
-    load: Option<PathBuf>,
+    file: Option<PathBuf>,
     /// Apply a pre-existing preset filter configuration on startup
-    #[arg(short, long, conflicts_with = "load")]
+    #[arg(short, long)]
     preset: Option<Preset>,
 }
 
@@ -267,12 +267,28 @@ async fn configure(args: ConfigArgs) -> anyhow::Result<()> {
 }
 
 async fn run_tui(args: TuiArgs) -> anyhow::Result<()> {
-    let filters = match (args.load, args.preset) {
+    let filters = match (args.file, args.preset) {
         (Some(_), Some(_)) => unreachable!("clap should prevent this case"),
-        (Some(apo_path), None) => {
-            let apo_config = apo::Config::parse_file(apo_path).await?;
-            // TODO preamp ignored
-            apo_config.filters.into_iter().map(Filter::from).collect()
+        (Some(path), None) => {
+            match path.extension() {
+                Some(ext) if ext == "conf" => {
+                    let conf = module::Config::parse_file(&path)?;
+                    if conf.context_modules.len() != 1 {
+                        anyhow::bail!(
+                            "expected exactly one context module in config, found {}",
+                            conf.context_modules.len()
+                        );
+                    }
+
+                    todo!("{:#?}", conf.context_modules[0])
+                }
+                Some(ext) if ext == "apo" => {
+                    let conf = apo::Config::parse_file(path).await?;
+                    // FIXME preamp ignored
+                    conf.filters.into_iter().map(Filter::from).collect()
+                }
+                _ => anyhow::bail!("file must have an extension of .apo or .conf"),
+            }
         }
         (None, Some(preset)) => preset.make_filters(),
         _ => vec![],

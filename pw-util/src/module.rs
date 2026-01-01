@@ -1,5 +1,7 @@
+use anyhow::Context as _;
+
 use crate::apo;
-use std::fmt;
+use std::{fmt, path::Path};
 
 // Property to mark nodes as managed by pw-eq
 // Ensure this matches the field name in CaptureProps
@@ -23,6 +25,15 @@ impl Config {
         Config {
             context_modules: vec![Module::from_apo(name, apo)],
         }
+    }
+
+    pub fn parse_file(path: &Path) -> anyhow::Result<Self> {
+        use std::fs::File;
+        use std::io::BufReader;
+        let file = File::open(path)?;
+        let reader = BufReader::new(file);
+        let config = spa_json::from_reader(reader).context("Failed to parse SPA JSON config")?;
+        Ok(config)
     }
 }
 
@@ -167,7 +178,7 @@ pub struct CaptureProps {
     #[serde(rename = "media.class")]
     pub media_class: String,
     // Ensure this rename matches the constant MANAGED_PROP
-    #[serde(rename = "pweq.managed")]
+    #[serde(default, rename = "pweq.managed")]
     pub pweq_managed: bool,
 }
 
@@ -194,7 +205,7 @@ pub enum AudioPosition {
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct FilterGraph {
     pub nodes: Box<[Node]>,
-    #[serde(skip_serializing_if = "Vec::is_empty")]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub links: Vec<Link>,
 }
 
