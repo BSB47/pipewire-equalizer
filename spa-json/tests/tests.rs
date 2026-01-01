@@ -4,17 +4,17 @@ use spa_json::json;
 fn test() {
     expect_test::expect![[r#"
         {
-          "name" = "Alice"
-          "age" = 30
-          "is_student" = false
-          "courses" = [
+          name = "Alice"
+          age = 30
+          is_student = false
+          courses = [
             "Math"
             "Science"
             "Art"
           ]
-          "address" = {
-            "street" = "123 Main St"
-            "city" = "Wonderland"
+          address = {
+            street = "123 Main St"
+            city = "Wonderland"
           }
         }"#]]
     .assert_eq(
@@ -31,7 +31,7 @@ fn test() {
         .unwrap(),
     );
 
-    expect_test::expect![[r#"{"name"="Alice","age"=30,"is_student"=false,"courses"=["Math" "Science" "Art"],"address"={"street"="123 Main St","city"="Wonderland"}}"#]]
+    expect_test::expect![[r#"{name="Alice",age=30,is_student=false,courses=["Math" "Science" "Art"],address={street="123 Main St",city="Wonderland"}}"#]]
     .assert_eq(
         &spa_json::to_string(&json!({
             "name": "Alice",

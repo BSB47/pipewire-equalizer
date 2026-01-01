@@ -749,7 +749,19 @@ where
 
     #[inline]
     fn serialize_str(self, value: &str) -> Result<()> {
-        self.ser.serialize_str(value)
+        // For map keys, write unquoted if possible.
+        if value
+            .chars()
+            .all(|c| matches!(c, '_' | '-') || c.is_alphanumeric())
+        {
+            self.ser
+                .writer
+                .write_all(value.as_bytes())
+                .map_err(Error::io)
+        } else {
+            format_escaped_str(&mut self.ser.writer, &mut self.ser.formatter, value)
+                .map_err(Error::io)
+        }
     }
 
     #[inline]
