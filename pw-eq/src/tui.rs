@@ -51,7 +51,17 @@ enum ViewMode {
 }
 
 #[derive(
-    Debug, Copy, Clone, PartialEq, Eq, Hash, Default, serde::Serialize, serde::Deserialize,
+    Debug,
+    Copy,
+    Clone,
+    PartialEq,
+    Eq,
+    Hash,
+    PartialOrd,
+    Ord,
+    Default,
+    serde::Serialize,
+    serde::Deserialize,
 )]
 #[serde(rename_all = "kebab-case")]
 enum InputMode {

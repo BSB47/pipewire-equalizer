@@ -3,7 +3,7 @@ use clap::Parser;
 use crossterm::event::EventStream;
 use futures_util::StreamExt as _;
 use pw_eq::filter::Filter;
-use pw_eq::tui::{App, Config};
+use pw_eq::tui;
 use pw_eq::{FilterId, find_eq_node, use_eq};
 use pw_util::apo::{self, FilterType};
 use pw_util::module::FILTER_PREFIX;
@@ -28,8 +28,8 @@ struct Args {
 }
 
 #[derive(Parser)]
-/// Create a new EQ from an AutoEQ .apo file
-struct Create {
+/// Create a new Pipewire EQ from an AutoEQ .apo file
+struct CreateArgs {
     /// Name for the EQ (e.g., focal-celestee)
     name: String,
     /// Path to the file (APO)
@@ -45,7 +45,7 @@ struct Create {
 
 #[derive(Parser)]
 /// Describe an EQ filter in detail
-struct Describe {
+struct DescribeArgs {
     /// EQ name or ID
     profile: String,
     #[arg(short, long)]
@@ -55,7 +55,7 @@ struct Describe {
 #[derive(Parser)]
 /// Set EQ filter parameters (can only modify existing filters, not add new ones)
 #[command(group(clap::ArgGroup::new("params").required(true).multiple(true)))]
-struct Set {
+struct SetArgs {
     /// EQ name or ID
     profile: String,
     /// Filter ID (depends on preset, use 'describe' to see available filters)
@@ -82,13 +82,13 @@ struct Set {
 
 #[derive(Parser)]
 /// Set an EQ as the default sink
-struct Use {
+struct UseArgs {
     /// EQ name or ID
     profile: String,
 }
 
 #[derive(Parser)]
-struct Tui {
+struct TuiArgs {
     /// Load a specific EQ profile on startup
     /// Currently supports .apo files only
     #[arg(short, long, conflicts_with = "preset")]
@@ -168,17 +168,30 @@ impl Preset {
 }
 
 #[derive(Parser)]
+pub enum ConfigArgs {
+    /// Create default configuration file
+    Init {
+        /// Overwrite existing configuration file
+        #[arg(short, long)]
+        force: bool,
+    },
+}
+
+#[derive(Parser)]
 enum Cmd {
-    Create(Create),
+    /// Configuration commands
+    #[clap(subcommand)]
+    Config(ConfigArgs),
+    Create(CreateArgs),
     /// List available EQ filters
     #[clap(alias = "ls")]
     List,
     #[clap(alias = "desc")]
-    Describe(Describe),
-    Set(Set),
-    Use(Use),
+    Describe(DescribeArgs),
+    Set(SetArgs),
+    Use(UseArgs),
     /// Interactive TUI mode
-    Tui(Tui),
+    Tui(TuiArgs),
 }
 
 #[tokio::main]
@@ -204,6 +217,7 @@ async fn main() -> anyhow::Result<()> {
     };
 
     match args.command {
+        Cmd::Config(config) => configure(config).await?,
         Cmd::Create(create) => create_eq(create).await?,
         Cmd::List => {
             let eqs = pw_eq::list_eqs().await?;
@@ -221,7 +235,37 @@ async fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
-async fn run_tui(args: Tui) -> anyhow::Result<()> {
+async fn configure(args: ConfigArgs) -> anyhow::Result<()> {
+    match args {
+        ConfigArgs::Init { force } => {
+            let config_dir = dirs::config_dir()
+                .ok_or_else(|| anyhow::anyhow!("Could not find config directory"))?
+                .join("pw-eq");
+
+            fs::create_dir_all(&config_dir).await?;
+
+            let config_path = config_dir.join("config.json");
+            if !force && config_path.exists() {
+                return Err(anyhow::anyhow!(
+                    "Configuration file at `{}` already exists",
+                    config_path.display()
+                ));
+            }
+
+            let file = fs::File::create(&config_path).await?;
+            serde_json::to_writer_pretty(file.try_into_std().unwrap(), &tui::Config::default())?;
+
+            println!(
+                "Created default configuration file at `{}`",
+                config_path.display()
+            );
+
+            Ok(())
+        }
+    }
+}
+
+async fn run_tui(args: TuiArgs) -> anyhow::Result<()> {
     let filters = match (args.load, args.preset) {
         (Some(_), Some(_)) => unreachable!("clap should prevent this case"),
         (Some(apo_path), None) => {
@@ -234,8 +278,8 @@ async fn run_tui(args: Tui) -> anyhow::Result<()> {
     };
 
     let term = ratatui::init();
-    let config = Config::default();
-    let mut app = App::new(term, config, filters)?;
+    let config = tui::Config::default();
+    let mut app = tui::App::new(term, config, filters)?;
     app.enter()?;
 
     let events = EventStream::new()
@@ -248,12 +292,12 @@ async fn run_tui(args: Tui) -> anyhow::Result<()> {
 }
 
 async fn create_eq(
-    Create {
+    CreateArgs {
         name,
         file,
         r#use: use_after,
         force,
-    }: Create,
+    }: CreateArgs,
 ) -> anyhow::Result<()> {
     // Parse the .apo file
     let apo_config = apo::Config::parse_file(file).await?;
@@ -289,14 +333,14 @@ async fn create_eq(
 }
 
 async fn set_filter(
-    Set {
+    SetArgs {
         profile,
         filter,
         freq: frequency,
         gain,
         q,
         persist,
-    }: Set,
+    }: SetArgs,
 ) -> anyhow::Result<()> {
     if persist {
         anyhow::bail!("Persisting changes is not yet implemented");
@@ -324,7 +368,7 @@ async fn set_filter(
     Ok(())
 }
 
-async fn describe_eq(Describe { all, profile }: &Describe) -> anyhow::Result<()> {
+async fn describe_eq(DescribeArgs { all, profile }: &DescribeArgs) -> anyhow::Result<()> {
     let node = find_eq_node(profile).await?;
     let info = node.info;
 

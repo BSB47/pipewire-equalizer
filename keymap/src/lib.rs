@@ -1,16 +1,16 @@
-use std::{collections::HashMap, hash::Hash};
+use std::collections::BTreeMap;
 
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "serde", serde(transparent))]
-pub struct KeyMap<M: Eq + Hash, K: Eq + Hash, V> {
-    bindings: HashMap<M, HashMap<K, V>>,
+pub struct KeyMap<M: Ord, K: Ord, V> {
+    bindings: BTreeMap<M, BTreeMap<K, V>>,
 }
 
 impl<M, K, V> Default for KeyMap<M, K, V>
 where
-    M: Hash + Eq,
-    K: Hash + Eq,
+    M: Ord,
+    K: Ord,
 {
     fn default() -> Self {
         Self::new()
@@ -19,12 +19,12 @@ where
 
 impl<M, K, V> KeyMap<M, K, V>
 where
-    M: Hash + Eq,
-    K: Hash + Eq,
+    M: Ord,
+    K: Ord,
 {
     pub fn new() -> Self {
         KeyMap {
-            bindings: HashMap::new(),
+            bindings: Default::default(),
         }
     }
 
