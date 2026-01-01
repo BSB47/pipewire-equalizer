@@ -45,7 +45,7 @@ impl Theme {
             gain_positive: Color::Rgb(0x85, 0x99, 0x00),
             gain_negative: Color::Rgb(0xcb, 0x4b, 0x16),
             gain_neutral: Color::Rgb(0x58, 0x6e, 0x75),
-            q_value: Color::Rgb(0xd3, 0x36, 0x82),
+            q_value: Color::Rgb(0xb5, 0x89, 0x00),
             coefficients: Color::Rgb(0x85, 0x99, 0x00),
 
             dimmed: Color::Rgb(0x58, 0x6e, 0x75),
@@ -57,7 +57,7 @@ impl Theme {
             status_ok: Color::Rgb(0x83, 0x94, 0x96),
             status_error: Color::Rgb(0xdc, 0x32, 0x2f),
             chart: Color::Rgb(0x2a, 0xa1, 0x98),
-            border: Color::Rgb(0x58, 0x6e, 0x75), // base01
+            border: Color::Rgb(0x58, 0x6e, 0x75),
         }
     }
 }
