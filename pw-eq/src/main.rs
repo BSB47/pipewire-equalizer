@@ -62,8 +62,8 @@ struct SetArgs {
     /// Filter ID (depends on preset, use 'describe' to see available filters)
     filter: FilterId,
     /// Set frequency in Hz
-    #[arg(short, long, group = "params")]
-    freq: Option<f64>,
+    #[arg(short, long = "freq", group = "params")]
+    frequency: Option<f64>,
     /// Set gain in dB
     #[arg(
         short,
@@ -245,7 +245,7 @@ async fn configure(args: ConfigArgs) -> anyhow::Result<()> {
 
             fs::create_dir_all(&config_dir).await?;
 
-            let config_path = config_dir.join("config.json");
+            let config_path = config_dir.join("pweq.conf");
             if !force && config_path.exists() {
                 return Err(anyhow::anyhow!(
                     "Configuration file at `{}` already exists",
@@ -254,7 +254,7 @@ async fn configure(args: ConfigArgs) -> anyhow::Result<()> {
             }
 
             let file = fs::File::create(&config_path).await?;
-            serde_json::to_writer_pretty(file.try_into_std().unwrap(), &tui::Config::default())?;
+            spa_json::to_writer_pretty(file.try_into_std().unwrap(), &tui::Config::default())?;
 
             println!(
                 "Created default configuration file at `{}`",
@@ -281,16 +281,15 @@ async fn run_tui(args: TuiArgs) -> anyhow::Result<()> {
     let term = ratatui::init();
 
     let base_config = tui::Config::default();
-    let user_config_path = dirs::config_dir().unwrap().join("pw-eq/config.json");
+    let user_config_path = dirs::config_dir().unwrap().join("pw-eq/pweq.conf");
     let config = if user_config_path.exists() {
         tracing::info!(
             path = %user_config_path.display(),
             "loading user configuration",
         );
         let file = fs::File::open(user_config_path).await?;
-        let config = serde_json::from_reader::<_, tui::Config>(BufReader::new(
-            file.try_into_std().unwrap(),
-        ))?;
+        let config =
+            spa_json::from_reader::<_, tui::Config>(BufReader::new(file.try_into_std().unwrap()))?;
         base_config.merge(config)
     } else {
         base_config
@@ -353,7 +352,7 @@ async fn set_filter(
     SetArgs {
         profile,
         filter,
-        freq: frequency,
+        frequency,
         gain,
         q,
         persist,
