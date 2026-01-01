@@ -1,7 +1,7 @@
 [workspace]
 resolver = "3"
 members = ["keymap",
-    "pw-eq", "pw-util",
+    "pw-eq", "pw-util", "spa-json",
 ]
 
 [workspace.dependencies]
