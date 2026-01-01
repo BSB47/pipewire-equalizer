@@ -4,6 +4,7 @@ use self::ser::Serializer;
 
 pub mod ser;
 
+#[derive(Clone, Debug, PartialEq)]
 pub enum Value {
     Null,
     Bool(bool),

@@ -13,4 +13,5 @@ serde.workspace = true
 
 [dev-dependencies]
 expect-test = "1.5.1"
+proptest = "1.9.0"
 serde = { workspace = true, features = ["derive"] }
