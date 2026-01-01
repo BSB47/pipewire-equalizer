@@ -48,3 +48,41 @@ impl Adjustment {
         }
     }
 }
+
+impl Action {
+    /// Returns a short description of the action for help text
+    pub fn description(&self) -> Option<&'static str> {
+        match self {
+            Action::ToggleHelp => Some("help"),
+            Action::Quit => Some("quit"),
+            Action::SelectNext => Some("next"),
+            Action::SelectPrevious => Some("prev"),
+            Action::AddFilter => Some("add"),
+            Action::RemoveFilter => Some("delete"),
+            Action::ToggleBypass => Some("bypass"),
+            Action::ToggleMute => Some("mute"),
+            Action::SelectIndex(_) => Some("select"),
+            Action::AdjustFrequency(_) => Some("freq"),
+            Action::AdjustGain(Adjustment::Set(0.0)) => Some("zero gain"),
+            Action::AdjustGain(_) => Some("gain"),
+            Action::AdjustQ(_) => Some("Q"),
+            Action::AdjustPreamp(_) => Some("preamp"),
+            Action::CycleFilterType { .. } => Some("type"),
+            Action::CycleViewMode { .. } => Some("view"),
+            Action::EnterMode { mode } => match mode {
+                InputMode::Normal => Some("normal mode"),
+                InputMode::Command => Some("command mode"),
+            },
+            Action::ExecuteCommand
+            | Action::ClearStatus
+            | Action::CommandHistoryPrevious
+            | Action::CommandHistoryNext
+            | Action::DeleteCharBackward
+            | Action::DeleteCharForward
+            | Action::MoveCursorLeft
+            | Action::MoveCursorRight
+            | Action::MoveCursorHome
+            | Action::MoveCursorEnd => None,
+        }
+    }
+}

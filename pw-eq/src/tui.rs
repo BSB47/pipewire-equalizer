@@ -3,6 +3,7 @@ mod draw;
 mod eq;
 
 use crate::{FilterId, UpdateFilter, filter::Filter, update_filters, use_eq};
+use std::collections::HashMap;
 use std::{
     error::Error,
     io, mem,
@@ -21,7 +22,7 @@ use crossterm::{
 };
 use futures_util::{Stream, StreamExt as _, future::BoxFuture, stream::FusedStream};
 use keymap::KeyMap;
-use pw_util::{module::FilterType, pipewire};
+use pw_util::pipewire;
 use ratatui::{Terminal, prelude::Backend};
 use tokio::sync::mpsc;
 use tokio_stream::wrappers::ReceiverStream;
@@ -246,17 +247,7 @@ where
             })
             .ok();
 
-        if self.eq.filters.iter().any(|band| {
-            use FilterType as Ft;
-            band.gain > 0.0
-                || matches!(
-                    band.filter_type,
-                    Ft::BandPass | Ft::Notch | Ft::HighPass | Ft::LowPass
-                )
-        }) {
-            // Load module if any band is not a no-op.
-            // This is just a development convenience to avoid loading the module when starting
-            // unnecessarily as audio pauses when unloading the module.
+        if !self.eq.is_noop() {
             self.load_module();
         }
 
@@ -390,46 +381,11 @@ where
 
     fn handle_normal_key(&mut self, key: KeyEvent) -> io::Result<ControlFlow<()>> {
         assert!(matches!(self.input_mode, InputMode::Normal));
-        let before_idx = self.eq.selected_idx;
-        let before_filter = self.eq.filters[self.eq.selected_idx];
-        let before_preamp = self.eq.preamp;
-        let before_bypass = self.eq.bypassed;
-        let before_filter_count = self.eq.filters.len();
-
         if let Some(action) = self.config.keymap.get(&self.input_mode, &key) {
             match self.perform(*action)? {
                 ControlFlow::Continue(()) => {}
                 ControlFlow::Break(()) => return Ok(ControlFlow::Break(())),
             }
-        }
-
-        if let Some(node_id) = self.active_node_id {
-            if before_preamp != self.eq.preamp {
-                self.sync_preamp(node_id);
-            }
-
-            if self.eq.selected_idx == before_idx
-                && self.eq.filters[self.eq.selected_idx] != before_filter
-            {
-                self.sync_filter(node_id, self.eq.selected_idx, self.sample_rate);
-            }
-
-            if before_bypass != self.eq.bypassed {
-                // If bypass state changed, sync all bands
-                self.sync(node_id, self.sample_rate);
-            }
-        }
-
-        // Load new module if filter count changed (add/delete band) because we cannot dynamically
-        // change the number of filters in the filter-chain module.
-        // Or if nothing is currently loaded.
-        if before_filter_count != self.eq.filters.len() || self.active_node_id.is_none() {
-            tracing::debug!(
-                old_filter_count = before_filter_count,
-                new_filter_count = self.eq.filters.len(),
-                "Reloading pipewire module"
-            );
-            self.load_module();
         }
 
         Ok(ControlFlow::Continue(()))
@@ -448,6 +404,7 @@ where
         let before_preamp = self.eq.preamp;
         let before_bypass = self.eq.bypassed;
         let before_filter_count = self.eq.filters.len();
+
         match action {
             Action::EnterMode { mode } => match mode {
                 InputMode::Normal => self.enter_normal_mode(),
@@ -528,7 +485,9 @@ where
         // Load new module if filter count changed (add/delete band) because we cannot dynamically
         // change the number of filters in the filter-chain module.
         // Or if nothing is currently loaded.
-        if before_filter_count != self.eq.filters.len() || self.active_node_id.is_none() {
+        if !self.eq.is_noop()
+            && (before_filter_count != self.eq.filters.len() || self.active_node_id.is_none())
+        {
             tracing::debug!(
                 old_filter_count = before_filter_count,
                 new_filter_count = self.eq.filters.len(),
@@ -597,6 +556,46 @@ where
                 self.command_cursor_pos = self.command_buffer.len();
             }
         }
+    }
+
+    pub(super) fn generate_help_text(&self) -> String {
+        // Group keys by action description
+        let mut action_keys: HashMap<String, Vec<String>> = HashMap::new();
+
+        // Iterate through all normal mode bindings
+        for (key, action) in self.config.keymap.iter_mode(&InputMode::Normal) {
+            // Special handling for mode switching
+            if let Action::EnterMode {
+                mode: InputMode::Command,
+            } = action
+            {
+                action_keys
+                    .entry("command".to_string())
+                    .or_default()
+                    .push(format!("{}", key));
+                continue;
+            }
+
+            // Get description for other actions
+            if let Some(desc) = action.description() {
+                action_keys
+                    .entry(desc.to_string())
+                    .or_default()
+                    .push(format!("{key}"));
+            }
+        }
+
+        // Build help text, sorted by action
+        let mut help_items: Vec<String> = action_keys
+            .into_iter()
+            .map(|(desc, mut keys)| {
+                keys.sort();
+                format!("{} {desc}", keys.join("/"))
+            })
+            .collect();
+
+        help_items.sort();
+        help_items.join(" | ")
     }
 
     fn handle_command_key(&mut self, key: KeyEvent) -> io::Result<ControlFlow<()>> {

@@ -6,7 +6,7 @@ use ratatui::{
     style::{Color, Modifier, Style},
     symbols::Marker,
     text::{Line, Span},
-    widgets::{Axis, Block, Borders, Cell, Chart, Dataset, GraphType, Paragraph, Row, Table},
+    widgets::{Axis, Block, Borders, Cell, Chart, Dataset, GraphType, Paragraph, Row, Table, Wrap},
 };
 use std::io;
 
@@ -16,24 +16,42 @@ where
     B::Error: Send + Sync + 'static,
 {
     pub(super) fn draw(&mut self) -> anyhow::Result<()> {
-        let eq_state = &self.eq;
+        let eq = &self.eq;
         let sample_rate = self.sample_rate;
         let view_mode = self.view_mode;
+
+        let help_text = if self.show_help {
+            self.generate_help_text()
+        } else {
+            String::new()
+        };
+
         self.term.draw(|f| {
+            // Calculate footer height dynamically based on help text length
+            let footer_height = if self.show_help {
+                let terminal_width = f.area().width as usize;
+                let help_len = help_text.len();
+                // Calculate how many lines are needed for the help text
+                let lines_needed = (help_len + terminal_width - 1) / terminal_width.max(1);
+                // Clamp to a reasonable range (min 1, max 5)
+                lines_needed.clamp(1, 5) as u16
+            } else {
+                1
+            };
+
             let chunks = Layout::default()
                 .direction(Direction::Vertical)
                 .constraints([
                     Constraint::Length(3),      // Header
                     Constraint::Min(10),        // Band table
                     Constraint::Percentage(40), // Frequency response chart
-                    Constraint::Length(1),      // Footer
+                    Constraint::Length(footer_height), // Footer
                 ])
                 .split(f.area());
 
-            // Header
-            let preamp_color = if eq_state.preamp > 0.05 {
+            let preamp_color = if eq.preamp > 0.05 {
                 Color::Green
-            } else if eq_state.preamp < -0.05 {
+            } else if eq.preamp < -0.05 {
                 Color::Red
             } else {
                 Color::Gray
@@ -42,21 +60,23 @@ where
             let mut header_spans = vec![
                 Span::raw(format!(
                     "PipeWire EQ: {} | Bands: {}/{} | Sample Rate: {:.0} Hz | Preamp: ",
-                    eq_state.name,
-                    eq_state.filters.len(),
-                    eq_state.max_filters,
+                    eq.name,
+                    eq.filters.len(),
+                    eq.max_filters,
                     sample_rate
                 )),
                 Span::styled(
-                    format!("{} dB", Gain(eq_state.preamp)),
+                    format!("{} dB", Gain(eq.preamp)),
                     Style::default().fg(preamp_color),
                 ),
             ];
 
-            if eq_state.bypassed {
+            if eq.bypassed {
                 header_spans.push(Span::styled(
                     " | BYPASSED",
-                    Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD),
+                    Style::default()
+                        .fg(Color::Yellow)
+                        .add_modifier(Modifier::BOLD),
                 ));
             }
 
@@ -64,14 +84,12 @@ where
                 .block(Block::default().borders(Borders::ALL));
             f.render_widget(header, chunks[0]);
 
-            draw_filters_table(f, chunks[1], eq_state, view_mode, sample_rate);
+            draw_filters_table(f, chunks[1], eq, view_mode, sample_rate);
 
-            draw_frequency_response(f, chunks[2], eq_state, sample_rate);
+            draw_frequency_response(f, chunks[2], eq, sample_rate);
 
             let footer = match &self.input_mode {
-                InputMode::Command  => {
-                    Paragraph::new(format!(":{}", self.command_buffer))
-                }
+                InputMode::Command => Paragraph::new(format!(":{}", self.command_buffer)),
                 InputMode::Normal if self.status.is_some() => {
                     let (msg, color) = match self.status.as_ref().unwrap() {
                         Ok(msg) => (msg.as_str(), Color::White),
@@ -80,20 +98,21 @@ where
                     Paragraph::new(msg).style(Style::default().fg(color))
                 }
                 InputMode::Normal if self.show_help => {
-                    Paragraph::new(
-                        "j/k: select | STab: type | m: mute | b: bypass | x: expert | f/F: freq | g/G: gain | q/Q: Q | +/-: preamp | a: add | d: delete | 0: zero | :: command | ?: hide help"
-                    )
-                    .style(Style::default().fg(Color::DarkGray))
+                    Paragraph::new(help_text)
+                        .style(Style::default().fg(Color::DarkGray))
+                        .wrap(Wrap { trim: true })
                 }
                 InputMode::Normal => {
-                    Paragraph::new("Press ? for help")
-                        .style(Style::default().fg(Color::DarkGray))
+                    Paragraph::new("Press ? for help").style(Style::default().fg(Color::DarkGray))
                 }
             };
             f.render_widget(footer, chunks[3]);
 
             if let InputMode::Command = &self.input_mode {
-                f.set_cursor_position((chunks[3].x + 1 + self.command_cursor_pos as u16, chunks[3].y));
+                f.set_cursor_position((
+                    chunks[3].x + 1 + self.command_cursor_pos as u16,
+                    chunks[3].y,
+                ));
             }
         })?;
         Ok(())

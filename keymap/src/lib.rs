@@ -37,6 +37,13 @@ where
             .get(mode)
             .and_then(|mode_map| mode_map.get(key))
     }
+
+    pub fn iter_mode(&self, mode: &M) -> impl Iterator<Item = (&K, &V)> {
+        self.bindings
+            .get(mode)
+            .into_iter()
+            .flat_map(|mode_map| mode_map.iter())
+    }
 }
 
 pub trait Action {}

@@ -22,6 +22,21 @@ pub(super) struct Eq {
 }
 
 impl Eq {
+    // Check if EQ is effectively a no-op (no gain changes and preamp at 0 dB)
+    pub fn is_noop(&self) -> bool {
+        self.preamp.abs() < f64::EPSILON
+            && self.filters.iter().all(|band| {
+                band.gain.abs() < f64::EPSILON
+                    && !matches!(
+                        band.filter_type,
+                        FilterType::BandPass
+                            | FilterType::Notch
+                            | FilterType::HighPass
+                            | FilterType::LowPass
+                    )
+            })
+    }
+
     pub fn with_filters(name: String, filters: impl IntoIterator<Item = Filter>) -> Self {
         let filters = filters.into_iter().collect::<Vec<_>>();
         Self {
