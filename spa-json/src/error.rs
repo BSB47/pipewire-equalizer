@@ -56,9 +56,6 @@ pub(crate) enum ErrorCode {
     /// EOF while parsing a JSON value.
     EofWhileParsingValue,
 
-    /// Expected this character to be a `':'`.
-    ExpectedColon,
-
     /// Expected to parse either a `true`, `false`, or a `null`.
     ExpectedSomeIdent,
 
@@ -176,7 +173,6 @@ impl fmt::Display for ErrorCode {
             ErrorCode::EofWhileParsingObject => f.write_str("EOF while parsing an object"),
             ErrorCode::EofWhileParsingString => f.write_str("EOF while parsing a string"),
             ErrorCode::EofWhileParsingValue => f.write_str("EOF while parsing a value"),
-            ErrorCode::ExpectedColon => f.write_str("expected `:`"),
             ErrorCode::ExpectedSomeIdent => f.write_str("expected ident"),
             ErrorCode::ExpectedSomeValue => f.write_str("expected value"),
             ErrorCode::ExpectedDoubleQuote => f.write_str("expected `\"`"),

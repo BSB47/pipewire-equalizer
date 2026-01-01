@@ -1466,6 +1466,7 @@ dependencies = [
  "serde_json",
  "shellexpand",
  "shellish_parse",
+ "spa-json",
  "strum 0.26.3",
  "tabled",
  "tokio",

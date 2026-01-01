@@ -64,16 +64,16 @@ fn scratch() {
 }
 
 proptest! {
-    // #[test]
-    // fn test_roundtrip_pretty(value in arb_v()) {
-    //     let s = spa_json::to_string_pretty(&value).unwrap();
-    //     let v2: Value = spa_json::from_str(&s).unwrap();
-    //     prop_assert_eq!(&value, &v2);
-    //
-    //     let s_pretty = spa_json::to_string_pretty(&value).unwrap();
-    //     let v3: Value = spa_json::from_str(&s_pretty).unwrap();
-    //     prop_assert_eq!(value, v3);
-    // }
+    #[test]
+    fn test_roundtrip_pretty(value in arb_v()) {
+        let s = spa_json::to_string_pretty(&value).unwrap();
+        let v2: Value = spa_json::from_str(&s).unwrap();
+        prop_assert_eq!(&value, &v2);
+
+        let s_pretty = spa_json::to_string_pretty(&value).unwrap();
+        let v3: Value = spa_json::from_str(&s_pretty).unwrap();
+        prop_assert_eq!(value, v3);
+    }
 
     #[test]
     fn test_roundtrip_compact(value in arb_v()) {
@@ -93,8 +93,7 @@ fn arb_v() -> impl Strategy<Value = Value> {
         any::<bool>().prop_map(Value::Bool),
         // Avoid using floats as they don't roundtrip well
         any::<u64>().prop_map(|n| Value::Number(Number::from(n))),
-        // ".*".prop_map(Value::String),
-        "[a-zA-Z0-9_-]*".prop_map(Value::String),
+        ".*".prop_map(Value::String),
     ];
     leaf.prop_recursive(
         8,   // 8 levels deep
