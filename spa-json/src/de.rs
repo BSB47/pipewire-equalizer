@@ -1405,10 +1405,10 @@ impl<'de, 'a, R: Read<'de> + 'a> de::MapAccess<'de> for MapAccess<'a, R> {
             } else if peek == b',' {
                 map.de.eat_char();
                 match tri!(map.de.parse_whitespace()) {
+                    // patch(spa): commas are optional
                     Some(b'"') => Ok(true),
-                    Some(b'}') => Err(map.de.peek_error(ErrorCode::TrailingComma)),
-                    Some(_) => Err(map.de.peek_error(ErrorCode::KeyMustBeAString)),
                     None => Err(map.de.peek_error(ErrorCode::EofWhileParsingValue)),
+                    _ => Ok(true),
                 }
             } else {
                 // patch(spa): commas are optional
@@ -1623,6 +1623,7 @@ where
             self.de.scratch.clear();
             loop {
                 match tri!(self.de.peek()) {
+                    Some(b'=' | b':') => break,
                     Some(b) if !b.is_ascii_whitespace() => {
                         self.de.scratch.push(b);
                         self.de.eat_char();

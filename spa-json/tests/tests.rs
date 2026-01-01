@@ -56,7 +56,7 @@ fn test_ser() {
 
 #[test]
 fn scratch() {
-    let v = json!({ "": null });
+    let v = json!({ "\u{b}": null, "A": null });
     let s = spa_json::to_string(&v).unwrap();
     println!("{s}");
     let v2: Value = spa_json::from_str(&s).unwrap();
