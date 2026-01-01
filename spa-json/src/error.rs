@@ -35,6 +35,7 @@ struct ErrorImpl {
 pub(crate) enum ErrorCode {
     KeyMustBeAString,
     FloatMustBeFinite,
+    NumberOutOfRange,
     Io(io::Error),
 }
 
@@ -54,6 +55,18 @@ impl fmt::Display for Error {
 }
 
 impl serde::ser::Error for Error {
+    fn custom<T: fmt::Display>(msg: T) -> Self {
+        Error {
+            err: Box::new(ErrorImpl {
+                code: ErrorCode::Io(io::Error::other(msg.to_string())),
+                line: 0,
+                column: 0,
+            }),
+        }
+    }
+}
+
+impl serde::de::Error for Error {
     fn custom<T: fmt::Display>(msg: T) -> Self {
         Error {
             err: Box::new(ErrorImpl {
@@ -91,6 +104,7 @@ impl fmt::Display for ErrorCode {
             ErrorCode::Io(err) => fmt::Display::fmt(err, f),
             ErrorCode::KeyMustBeAString => write!(f, "key must be a string"),
             ErrorCode::FloatMustBeFinite => write!(f, "float must be finite"),
+            ErrorCode::NumberOutOfRange => write!(f, "number out of range"),
         }
     }
 }

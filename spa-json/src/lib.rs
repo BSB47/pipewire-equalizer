@@ -1,19 +1,15 @@
+mod de;
 pub mod error;
+mod macros;
+mod number;
+mod ser;
+mod value;
 
-mod serde;
-pub use self::serde::ser::{
+pub use self::error::{Error, Result};
+pub use self::ser::{
     to_string, to_string_pretty, to_vec, to_vec_pretty, to_writer, to_writer_pretty,
 };
-
-pub type Map<K, V> = std::collections::HashMap<K, V>;
-
-pub enum Value {
-    Int(i32),
-    Float(f64),
-    String(String),
-    Array(Vec<Value>),
-    Object(Map<String, Value>),
-}
+pub use self::value::Value;
 
 macro_rules! tri {
     ($e:expr $(,)?) => {
