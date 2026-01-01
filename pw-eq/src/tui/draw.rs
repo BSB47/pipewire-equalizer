@@ -91,7 +91,8 @@ where
             let header = Paragraph::new(Line::from(header_spans)).block(
                 Block::default()
                     .borders(Borders::ALL)
-                    .border_style(Style::default().fg(theme.border)),
+                    .border_style(Style::default().fg(theme.border))
+                    .padding(Padding::horizontal(1)),
             );
             f.render_widget(header, chunks[0]);
 
@@ -312,7 +313,8 @@ fn draw_filters_table(
     let table = Table::new(rows, widths).header(header).block(
         Block::default()
             .borders(Borders::ALL)
-            .border_style(Style::default().fg(theme.border)),
+            .border_style(Style::default().fg(theme.border))
+            .padding(Padding::horizontal(1)),
     );
 
     f.render_widget(table, area);
@@ -381,7 +383,8 @@ fn draw_frequency_response(
         .block(
             Block::default()
                 .borders(Borders::ALL)
-                .border_style(Style::default().fg(theme.border)),
+                .border_style(Style::default().fg(theme.border))
+                .padding(Padding::horizontal(1)),
         )
         .x_axis(x_axis)
         .y_axis(y_axis);

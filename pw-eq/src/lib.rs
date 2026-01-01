@@ -1,3 +1,5 @@
+#![recursion_limit = "256"]
+
 pub mod filter;
 mod pw;
 pub mod tui;
