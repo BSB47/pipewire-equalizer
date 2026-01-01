@@ -712,188 +712,6 @@ impl<'de, R: Read<'de>> Deserializer<R> {
             None => Err(self.peek_error(ErrorCode::EofWhileParsingObject)),
         }
     }
-
-    fn ignore_value(&mut self) -> Result<()> {
-        self.scratch.clear();
-        let mut enclosing = None;
-
-        loop {
-            let peek = match tri!(self.parse_whitespace()) {
-                Some(b) => b,
-                None => {
-                    return Err(self.peek_error(ErrorCode::EofWhileParsingValue));
-                }
-            };
-
-            let frame = match peek {
-                b'n' => {
-                    self.eat_char();
-                    tri!(self.parse_ident(b"ull"));
-                    None
-                }
-                b't' => {
-                    self.eat_char();
-                    tri!(self.parse_ident(b"rue"));
-                    None
-                }
-                b'f' => {
-                    self.eat_char();
-                    tri!(self.parse_ident(b"alse"));
-                    None
-                }
-                b'-' => {
-                    self.eat_char();
-                    tri!(self.ignore_integer());
-                    None
-                }
-                b'0'..=b'9' => {
-                    tri!(self.ignore_integer());
-                    None
-                }
-                b'"' => {
-                    self.eat_char();
-                    tri!(self.read.ignore_str());
-                    None
-                }
-                frame @ (b'[' | b'{') => {
-                    self.scratch.extend(enclosing.take());
-                    self.eat_char();
-                    Some(frame)
-                }
-                _ => return Err(self.peek_error(ErrorCode::ExpectedSomeValue)),
-            };
-
-            let (mut accept_comma, mut frame) = match frame {
-                Some(frame) => (false, frame),
-                None => match enclosing.take() {
-                    Some(frame) => (true, frame),
-                    None => match self.scratch.pop() {
-                        Some(frame) => (true, frame),
-                        None => return Ok(()),
-                    },
-                },
-            };
-
-            loop {
-                match tri!(self.parse_whitespace()) {
-                    Some(b',') if accept_comma => {
-                        self.eat_char();
-                        break;
-                    }
-                    Some(b']') if frame == b'[' => {}
-                    Some(b'}') if frame == b'{' => {}
-                    Some(_) => {
-                        if accept_comma {
-                            return Err(self.peek_error(match frame {
-                                b'[' => ErrorCode::ExpectedListCommaOrEnd,
-                                b'{' => ErrorCode::ExpectedObjectCommaOrEnd,
-                                _ => unreachable!(),
-                            }));
-                        } else {
-                            break;
-                        }
-                    }
-                    None => {
-                        return Err(self.peek_error(match frame {
-                            b'[' => ErrorCode::EofWhileParsingList,
-                            b'{' => ErrorCode::EofWhileParsingObject,
-                            _ => unreachable!(),
-                        }));
-                    }
-                }
-
-                self.eat_char();
-                frame = match self.scratch.pop() {
-                    Some(frame) => frame,
-                    None => return Ok(()),
-                };
-                accept_comma = true;
-            }
-
-            if frame == b'{' {
-                match tri!(self.parse_whitespace()) {
-                    Some(b'"') => self.eat_char(),
-                    Some(_) => return Err(self.peek_error(ErrorCode::KeyMustBeAString)),
-                    None => return Err(self.peek_error(ErrorCode::EofWhileParsingObject)),
-                }
-                tri!(self.read.ignore_str());
-                match tri!(self.parse_whitespace()) {
-                    Some(b':') => self.eat_char(),
-                    Some(_) => return Err(self.peek_error(ErrorCode::ExpectedColon)),
-                    None => return Err(self.peek_error(ErrorCode::EofWhileParsingObject)),
-                }
-            }
-
-            enclosing = Some(frame);
-        }
-    }
-
-    fn ignore_integer(&mut self) -> Result<()> {
-        match tri!(self.next_char_or_null()) {
-            b'0' => {
-                // There can be only one leading '0'.
-                if let b'0'..=b'9' = tri!(self.peek_or_null()) {
-                    return Err(self.peek_error(ErrorCode::InvalidNumber));
-                }
-            }
-            b'1'..=b'9' => {
-                while let b'0'..=b'9' = tri!(self.peek_or_null()) {
-                    self.eat_char();
-                }
-            }
-            _ => {
-                return Err(self.error(ErrorCode::InvalidNumber));
-            }
-        }
-
-        match tri!(self.peek_or_null()) {
-            b'.' => self.ignore_decimal(),
-            b'e' | b'E' => self.ignore_exponent(),
-            _ => Ok(()),
-        }
-    }
-
-    fn ignore_decimal(&mut self) -> Result<()> {
-        self.eat_char();
-
-        let mut at_least_one_digit = false;
-        while let b'0'..=b'9' = tri!(self.peek_or_null()) {
-            self.eat_char();
-            at_least_one_digit = true;
-        }
-
-        if !at_least_one_digit {
-            return Err(self.peek_error(ErrorCode::InvalidNumber));
-        }
-
-        match tri!(self.peek_or_null()) {
-            b'e' | b'E' => self.ignore_exponent(),
-            _ => Ok(()),
-        }
-    }
-
-    fn ignore_exponent(&mut self) -> Result<()> {
-        self.eat_char();
-
-        match tri!(self.peek_or_null()) {
-            b'+' | b'-' => self.eat_char(),
-            _ => {}
-        }
-
-        // Make sure a digit follows the exponent place.
-        match tri!(self.next_char_or_null()) {
-            b'0'..=b'9' => {}
-            _ => {
-                return Err(self.error(ErrorCode::InvalidNumber));
-            }
-        }
-
-        while let b'0'..=b'9' = tri!(self.peek_or_null()) {
-            self.eat_char();
-        }
-
-        Ok(())
-    }
 }
 
 impl FromStr for Number {
@@ -1493,8 +1311,8 @@ impl<'de, R: Read<'de>> de::Deserializer<'de> for &mut Deserializer<R> {
     where
         V: de::Visitor<'de>,
     {
-        tri!(self.ignore_value());
-        visitor.visit_unit()
+        // patch(spa): avoid maintaining separate logic for ignore_value
+        self.deserialize_any(visitor)
     }
 }
 
@@ -1539,7 +1357,11 @@ impl<'de, 'a, R: Read<'de> + 'a> de::SeqAccess<'de> for SeqAccess<'a, R> {
                     None => Err(seq.de.peek_error(ErrorCode::EofWhileParsingValue)),
                 }
             } else {
-                Err(seq.de.peek_error(ErrorCode::ExpectedListCommaOrEnd))
+                // patch(spa): commas are optional
+                match tri!(seq.de.parse_whitespace()) {
+                    Some(b']') => Ok(false),
+                    _ => Ok(true),
+                }
             }
         }
 

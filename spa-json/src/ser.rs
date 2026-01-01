@@ -749,7 +749,7 @@ where
 
     #[inline]
     fn serialize_str(self, value: &str) -> Result<()> {
-        // For map keys, write unquoted if possible.
+        // patch(spa): For map keys, write unquoted if possible.
         if value
             .chars()
             .all(|c| matches!(c, '_' | '-') || c.is_alphanumeric())

@@ -1,3 +1,5 @@
+use core::fmt;
+
 use crate::{Error, Map, number::Number};
 
 use self::ser::Serializer;
@@ -5,7 +7,7 @@ use self::ser::Serializer;
 pub mod de;
 pub mod ser;
 
-#[derive(Clone, Debug, PartialEq, Hash)]
+#[derive(Clone, PartialEq, Hash)]
 pub enum Value {
     Null,
     Bool(bool),
@@ -13,6 +15,19 @@ pub enum Value {
     String(String),
     Array(Vec<Value>),
     Object(Map<String, Value>),
+}
+
+impl fmt::Debug for Value {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Value::Null => write!(f, "Null"),
+            Value::Bool(b) => write!(f, "{b}"),
+            Value::Number(n) => write!(f, "{n}"),
+            Value::String(s) => write!(f, "\"{s}\""),
+            Value::Array(a) => write!(f, "{a:?}"),
+            Value::Object(o) => write!(f, "Object({:?})", o),
+        }
+    }
 }
 
 impl From<bool> for Value {
