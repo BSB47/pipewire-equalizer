@@ -750,9 +750,10 @@ where
     #[inline]
     fn serialize_str(self, value: &str) -> Result<()> {
         // patch(spa): For map keys, write unquoted if possible.
-        if value
-            .chars()
-            .all(|c| matches!(c, '_' | '-') || c.is_alphanumeric())
+        if !value.is_empty()
+            && value
+                .chars()
+                .all(|c| matches!(c, '_' | '-') || c.is_alphanumeric())
         {
             self.ser
                 .writer

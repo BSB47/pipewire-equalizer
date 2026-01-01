@@ -672,13 +672,15 @@ impl<'de, R: Read<'de>> Deserializer<R> {
         self.parse_integer(positive)
     }
 
-    fn parse_object_colon(&mut self) -> Result<()> {
+    fn parse_object_sep(&mut self) -> Result<()> {
         match tri!(self.parse_whitespace()) {
-            Some(b':') => {
+            // patch(spa): allow `=` as well as `:` after key
+            Some(b':' | b'=') => {
                 self.eat_char();
                 Ok(())
             }
-            Some(_) => Err(self.peek_error(ErrorCode::ExpectedColon)),
+            // patch(spa): `:` or `=` are optional
+            Some(_) => Ok(()),
             None => Err(self.peek_error(ErrorCode::EofWhileParsingObject)),
         }
     }
@@ -1428,7 +1430,7 @@ impl<'de, 'a, R: Read<'de> + 'a> de::MapAccess<'de> for MapAccess<'a, R> {
     where
         V: de::DeserializeSeed<'de>,
     {
-        tri!(self.de.parse_object_colon());
+        tri!(self.de.parse_object_sep());
 
         seed.deserialize(&mut *self.de)
     }
@@ -1453,7 +1455,7 @@ impl<'de, 'a, R: Read<'de> + 'a> de::EnumAccess<'de> for VariantAccess<'a, R> {
         V: de::DeserializeSeed<'de>,
     {
         let val = tri!(seed.deserialize(&mut *self.de));
-        tri!(self.de.parse_object_colon());
+        tri!(self.de.parse_object_sep());
         Ok((val, self))
     }
 }
@@ -1607,13 +1609,7 @@ where
         V: de::Visitor<'de>,
     {
         // patch(spa): handle unquoted keys
-        let quoted = match tri!(self.de.peek()) {
-            Some(b'"') => {
-                self.de.eat_char();
-                true
-            }
-            _ => false,
-        };
+        let quoted = matches!(tri!(self.de.peek()), Some(b'"'));
 
         if quoted {
             self.de.eat_char();
@@ -1623,7 +1619,7 @@ where
                 Reference::Copied(s) => visitor.visit_str(s),
             }
         } else {
-            // unquoted key
+            // patch(spa): parse unquoted key
             self.de.scratch.clear();
             loop {
                 match tri!(self.de.peek()) {

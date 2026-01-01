@@ -24,8 +24,8 @@ impl fmt::Debug for Value {
             Value::Bool(b) => write!(f, "{b}"),
             Value::Number(n) => write!(f, "{n}"),
             Value::String(s) => write!(f, "\"{s}\""),
-            Value::Array(a) => write!(f, "{a:?}"),
-            Value::Object(o) => write!(f, "Object({:?})", o),
+            Value::Array(xs) => write!(f, "{xs:?}"),
+            Value::Object(obj) => write!(f, "{obj:?}"),
         }
     }
 }

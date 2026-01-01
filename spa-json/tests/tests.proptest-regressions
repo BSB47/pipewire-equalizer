@@ -5,3 +5,4 @@
 # It is recommended to check this file in to source control so that
 # everyone who runs the test benefits from these saved cases.
 cc e5802598fc04a6f2b8b3578f8b785d54fcd5bffb6203ff67e67ef1da90bc378d # shrinks to value = Array([Array([Null, Null])])
+cc fc2f8b38c3ebaa2a193d05f29a33c5aa3f1790ebef1a597cd1c2a979a206e98f # shrinks to value = {"A": Null}
