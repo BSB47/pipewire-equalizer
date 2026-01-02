@@ -1,0 +1,151 @@
+use proptest::{
+    prelude::{Just, Strategy, any, prop, prop_assert_eq, proptest},
+    prop_oneof,
+};
+use spa_json::{Map, Number, Value, json};
+
+#[test]
+fn test_ser() {
+    expect_test::expect![[r#"
+        {
+          name = "Alice"
+          age = 30
+          is_student = false
+          courses = [
+            "Math"
+            "Science"
+            "Art"
+          ]
+          address = {
+            street = "123 Main St"
+            city = "Wonderland"
+          }
+        }"#]]
+    .assert_eq(
+        &spa_json::to_string_pretty(&json!({
+            "name": "Alice",
+            "age": 30,
+            "is_student": false,
+            "courses": ["Math", "Science", "Art"],
+            "address": {
+                "street": "123 Main St",
+                "city": "Wonderland"
+            }
+        }))
+        .unwrap(),
+    );
+
+    expect_test::expect![[r#"{name="Alice",age=30,is_student=false,courses=["Math" "Science" "Art"],address={street="123 Main St",city="Wonderland"}}"#]]
+    .assert_eq(
+        &spa_json::to_string(&json!({
+            "name": "Alice",
+            "age": 30,
+            "is_student": false,
+            "courses": ["Math", "Science", "Art"],
+            "address": {
+                "street": "123 Main St",
+                "city": "Wonderland"
+            }
+        }))
+        .unwrap(),
+    );
+
+    expect_test::expect![[r#"{""=null}"#]]
+        .assert_eq(&spa_json::to_string(&json!({ "": null })).unwrap());
+
+    #[derive(serde::Serialize, serde::Deserialize)]
+    enum Variants {
+        Unit,
+        NewType(i32),
+        Tuple(i32, String),
+        Struct { id: i32, name: String },
+    }
+
+    expect_test::expect![[r#"
+        [
+          "Unit"
+          {
+            NewType = 42
+          }
+          {
+            Tuple = [
+              7
+              "example"
+            ]
+          }
+          {
+            Struct = {
+              id = 1
+              name = "Test"
+            }
+          }
+        ]"#]]
+    .assert_eq(
+        &spa_json::to_string_pretty(&json!([
+            Variants::Unit,
+            Variants::NewType(42),
+            Variants::Tuple(7, "example".to_string()),
+            Variants::Struct {
+                id: 1,
+                name: "Test".to_string()
+            },
+        ]))
+        .unwrap(),
+    );
+}
+
+#[test]
+fn scratch() {
+    let v = json!({ "\u{b}": null, "A": null });
+    let s = spa_json::to_string(&v).unwrap();
+    println!("{s}");
+    let v2: Value = spa_json::from_str(&s).unwrap();
+    assert_eq!(v, v2);
+}
+
+proptest! {
+    #[test]
+    fn test_roundtrip_pretty(value in arb_v()) {
+        let s = spa_json::to_string_pretty(&value).unwrap();
+        let v2: Value = spa_json::from_str(&s).unwrap();
+        prop_assert_eq!(&value, &v2);
+
+        let s_pretty = spa_json::to_string_pretty(&value).unwrap();
+        let v3: Value = spa_json::from_str(&s_pretty).unwrap();
+        prop_assert_eq!(value, v3);
+    }
+
+    #[test]
+    fn test_roundtrip_compact(value in arb_v()) {
+        let s = spa_json::to_string(&value).unwrap();
+        let v2: Value = spa_json::from_str(&s).unwrap();
+        prop_assert_eq!(&value, &v2);
+
+        let s_compact = spa_json::to_string(&value).unwrap();
+        let v3: Value = spa_json::from_str(&s_compact).unwrap();
+        prop_assert_eq!(value, v3);
+    }
+}
+
+fn arb_v() -> impl Strategy<Value = Value> {
+    let leaf = prop_oneof![
+        Just(Value::Null),
+        any::<bool>().prop_map(Value::Bool),
+        // Avoid using floats as they don't roundtrip well
+        any::<u64>().prop_map(|n| Value::Number(Number::from(n))),
+        ".*".prop_map(Value::String),
+    ];
+    leaf.prop_recursive(
+        8,   // 8 levels deep
+        256, // maximum size of total nodes
+        10,  // maximum size of each collection
+        |inner| {
+            prop_oneof![
+                prop::collection::vec(inner.clone(), 0..10).prop_map(Value::Array),
+                prop::collection::btree_map(".*", inner, 0..10)
+                    .prop_map(Map::from_iter)
+                    .prop_map(Value::Object),
+            ]
+        },
+    )
+}

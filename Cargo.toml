@@ -1,10 +1,16 @@
 [workspace]
 resolver = "3"
-members = ["keymap",
-    "pw-eq", "pw-util",
+members = [
+    "keymap",
+    "pw-eq",
+    "pw-util",
+    "spa-json",
 ]
 
 [workspace.dependencies]
+pw-util = { path = "pw-util" }
+keymap = { path = "keymap" }
+spa-json = { path = "spa-json" }
 anyhow = "1.0.100"
 tokio = "1.48.0"
 serde = { version = "1.0.228" }

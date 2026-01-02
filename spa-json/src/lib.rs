@@ -1,0 +1,37 @@
+mod de;
+pub mod error;
+mod iter;
+mod macros;
+mod map;
+mod number;
+mod read;
+mod ser;
+mod value;
+
+pub use self::de::{from_reader, from_slice, from_str};
+pub use self::error::{Error, Result};
+pub use self::map::Map;
+pub use self::number::Number;
+pub use self::ser::{
+    to_string, to_string_pretty, to_vec, to_vec_pretty, to_writer, to_writer_pretty,
+};
+pub use self::value::{Value, to_value};
+
+use crate::de::Deserializer;
+
+macro_rules! tri {
+    ($e:expr $(,)?) => {
+        match $e {
+            core::result::Result::Ok(val) => val,
+            core::result::Result::Err(err) => return core::result::Result::Err(err),
+        }
+    };
+}
+
+use tri;
+
+#[doc(hidden)]
+pub mod __private {
+    #[doc(hidden)]
+    pub use std::vec;
+}
