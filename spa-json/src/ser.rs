@@ -184,6 +184,9 @@ where
 
     #[inline]
     fn serialize_str(self, value: &str) -> Result<()> {
+        if value == "adjust-preamp" {
+            panic!("")
+        }
         format_escaped_str(&mut self.writer, &mut self.formatter, value).map_err(Error::io)
     }
 
@@ -246,7 +249,8 @@ where
                 .begin_object_key(&mut self.writer, true)
                 .map_err(Error::io)
         );
-        tri!(self.serialize_str(variant));
+        // patch(spa)
+        tri!(serialize_key(self, variant).map_err(Error::io));
         tri!(
             self.formatter
                 .end_object_key(&mut self.writer)
@@ -400,6 +404,7 @@ where
                 .begin_object_key(&mut self.writer, true)
                 .map_err(Error::io)
         );
+        // patch(spa)
         tri!(serialize_key(self, variant).map_err(Error::io));
         tri!(
             self.formatter
