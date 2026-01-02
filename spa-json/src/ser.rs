@@ -184,9 +184,6 @@ where
 
     #[inline]
     fn serialize_str(self, value: &str) -> Result<()> {
-        if value == "adjust-preamp" {
-            panic!("")
-        }
         format_escaped_str(&mut self.writer, &mut self.formatter, value).map_err(Error::io)
     }
 
@@ -764,7 +761,7 @@ where
         _variant_index: u32,
         variant: &'static str,
     ) -> Result<()> {
-        self.ser.serialize_str(variant)
+        self.serialize_str(variant)
     }
 
     #[inline]

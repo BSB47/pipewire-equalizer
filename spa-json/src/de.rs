@@ -1296,8 +1296,8 @@ impl<'de, R: Read<'de>> de::Deserializer<'de> for &mut Deserializer<R> {
                     None => Err(self.error(ErrorCode::EofWhileParsingObject)),
                 }
             }
-            Some(b'"') => visitor.visit_enum(UnitVariantAccess::new(self)),
-            Some(_) => Err(self.peek_error(ErrorCode::ExpectedSomeValue)),
+            // patch(spa): allow unit variants as bare identifiers
+            Some(_) => visitor.visit_enum(UnitVariantAccess::new(self)),
             None => Err(self.peek_error(ErrorCode::EofWhileParsingValue)),
         }
     }
