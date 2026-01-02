@@ -52,6 +52,46 @@ fn test_ser() {
 
     expect_test::expect![[r#"{""=null}"#]]
         .assert_eq(&spa_json::to_string(&json!({ "": null })).unwrap());
+
+    #[derive(serde::Serialize, serde::Deserialize)]
+    enum Variants {
+        Unit,
+        NewType(i32),
+        Tuple(i32, String),
+        Struct { id: i32, name: String },
+    }
+
+    expect_test::expect![[r#"
+        [
+          "Unit"
+          {
+            NewType = 42
+          }
+          {
+            Tuple = [
+              7
+              "example"
+            ]
+          }
+          {
+            Struct = {
+              id = 1
+              name = "Test"
+            }
+          }
+        ]"#]]
+    .assert_eq(
+        &spa_json::to_string_pretty(&json!([
+            Variants::Unit,
+            Variants::NewType(42),
+            Variants::Tuple(7, "example".to_string()),
+            Variants::Struct {
+                id: 1,
+                name: "Test".to_string()
+            },
+        ]))
+        .unwrap(),
+    );
 }
 
 #[test]

@@ -400,7 +400,7 @@ where
                 .begin_object_key(&mut self.writer, true)
                 .map_err(Error::io)
         );
-        tri!(self.serialize_str(variant));
+        tri!(serialize_key(self, variant).map_err(Error::io));
         tri!(
             self.formatter
                 .end_object_key(&mut self.writer)
@@ -749,20 +749,7 @@ where
 
     #[inline]
     fn serialize_str(self, value: &str) -> Result<()> {
-        // patch(spa): For map keys, write unquoted if possible.
-        if !value.is_empty()
-            && value
-                .chars()
-                .all(|c| matches!(c, '_' | '-') || c.is_alphanumeric())
-        {
-            self.ser
-                .writer
-                .write_all(value.as_bytes())
-                .map_err(Error::io)
-        } else {
-            format_escaped_str(&mut self.ser.writer, &mut self.ser.formatter, value)
-                .map_err(Error::io)
-        }
+        serialize_key(self.ser, value).map_err(Error::io)
     }
 
     #[inline]
@@ -1907,4 +1894,22 @@ where
     }
 
     Ok(())
+}
+
+// patch(spa): For map keys, write unquoted if possible.
+fn serialize_key<W, F>(ser: &mut Serializer<W, F>, key: &str) -> io::Result<()>
+where
+    W: io::Write,
+    F: Formatter,
+{
+    // Write unquoted key if valid
+    if !key.is_empty()
+        && key
+            .chars()
+            .all(|c| matches!(c, '_' | '-') || c.is_alphanumeric())
+    {
+        ser.formatter.write_string_fragment(&mut ser.writer, key)
+    } else {
+        format_escaped_str(&mut ser.writer, &mut ser.formatter, key)
+    }
 }
