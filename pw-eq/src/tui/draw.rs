@@ -104,8 +104,8 @@ where
                 InputMode::Command => Paragraph::new(format!(":{}", self.command_buffer)),
                 InputMode::Normal if self.status.is_some() => {
                     let (msg, color) = match self.status.as_ref().unwrap() {
-                        Ok(msg) => (msg.as_str(), Color::White),
-                        Err(msg) => (msg.as_str(), Color::Red),
+                        Ok(msg) => (msg.as_str(), self.config.theme.status_ok),
+                        Err(msg) => (msg.as_str(), self.config.theme.status_error),
                     };
                     Paragraph::new(msg).style(Style::default().fg(color))
                 }

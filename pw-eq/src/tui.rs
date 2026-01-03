@@ -724,7 +724,9 @@ where
                     async move {
                         match eq_state.save_config(&path, format).await {
                             Ok(()) => Ok(Some(format!("Saved to {}", path.display()))),
-                            Err(err) => Err(err.to_string()),
+                            Err(err) => {
+                                Err(format!("failed to save file to {}: {err}", path.display()))
+                            }
                         }
                     }
                 });
