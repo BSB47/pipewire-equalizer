@@ -3,7 +3,7 @@ use pw_util::module::FilterType;
 use ratatui::{
     layout::Direction,
     prelude::{Backend, Constraint, Layout, Rect},
-    style::{Color, Modifier, Style},
+    style::{Modifier, Style},
     symbols::Marker,
     text::{Line, Span},
     widgets::{
@@ -58,21 +58,24 @@ where
                 .split(f.area());
 
             let preamp_color = if eq.preamp > 0.05 {
-                Color::Green
+                theme.gain_positive
             } else if eq.preamp < -0.05 {
-                Color::Red
+                theme.gain_negative
             } else {
-                Color::Gray
+                theme.gain_neutral
             };
 
             let mut header_spans = vec![
-                Span::raw(format!(
-                    "PipeWire EQ: {} | Bands: {}/{} | Sample Rate: {:.0} Hz | Preamp: ",
-                    eq.name,
-                    eq.filters.len(),
-                    eq.max_filters,
-                    sample_rate
-                )),
+                Span::styled(
+                    format!(
+                        "PipeWire EQ: {} | Bands: {}/{} | Sample Rate: {:.0} Hz | Preamp: ",
+                        eq.name,
+                        eq.filters.len(),
+                        eq.max_filters,
+                        sample_rate
+                    ),
+                    Style::default().fg(theme.header),
+                ),
                 Span::styled(
                     format!("{} dB", Gain(eq.preamp)),
                     Style::default().fg(preamp_color),
@@ -83,7 +86,7 @@ where
                 header_spans.push(Span::styled(
                     " | BYPASSED",
                     Style::default()
-                        .fg(Color::Yellow)
+                        .fg(theme.bypassed)
                         .add_modifier(Modifier::BOLD),
                 ));
             }
@@ -101,7 +104,8 @@ where
             draw_frequency_response(f, chunks[2], eq, sample_rate, theme);
 
             let footer = match &self.input_mode {
-                InputMode::Command => Paragraph::new(format!(":{}", self.command_buffer)),
+                InputMode::Command => Paragraph::new(format!(":{}", self.command_buffer))
+                    .style(Style::default().fg(theme.footer)),
                 InputMode::Normal if self.status.is_some() => {
                     let (msg, color) = match self.status.as_ref().unwrap() {
                         Ok(msg) => (msg.as_str(), self.config.theme.status_ok),
@@ -110,10 +114,10 @@ where
                     Paragraph::new(msg).style(Style::default().fg(color))
                 }
                 InputMode::Normal if self.show_help => Paragraph::new(help_text)
-                    .style(Style::default().fg(Color::DarkGray))
+                    .style(Style::default().fg(theme.help))
                     .wrap(Wrap { trim: true }),
                 InputMode::Normal => {
-                    Paragraph::new("Press ? for help").style(Style::default().fg(Color::DarkGray))
+                    Paragraph::new("Press ? for help").style(Style::default().fg(theme.footer))
                 }
             };
             f.render_widget(footer, chunks[3]);
